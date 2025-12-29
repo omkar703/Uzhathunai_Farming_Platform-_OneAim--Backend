@@ -3,5 +3,5 @@
 __pycache__/
 .env
 /Improvements_need
-/AIhelp
 .env.docker
+/AIhelp

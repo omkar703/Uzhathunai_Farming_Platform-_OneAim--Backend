@@ -28,8 +28,12 @@ from app.api.v1 import (
 )
 from app.api.v1.farm_audit import option_sets, parameters, sections, templates, audits, reports
 from app.api.v1.bff import farming_dashboard, fsp_dashboard
+from app.api.v1 import admin
 
 api_router = APIRouter()
+
+# Include admin routes
+api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 
 # Include auth routes
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])

@@ -39,6 +39,7 @@ class Organization(Base):
     logo_url = Column(Text)
     organization_type = Column(SQLEnum(OrganizationType, name='organization_type'), nullable=False)
     status = Column(SQLEnum(OrganizationStatus, name='organization_status'), default=OrganizationStatus.NOT_STARTED)
+    is_approved = Column(Boolean, default=False)
     registration_number = Column(String(100))
     
     # Address information
