@@ -167,13 +167,17 @@ def revoke_refresh_token(token: str, db: Session) -> bool:
         # Verify token structure
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         
+        # Calculate hash
+        token_hash = get_token_hash(token)
+        
         # Find and revoke token
         db_token = db.query(RefreshToken).filter(
+            RefreshToken.token_hash == token_hash,
             RefreshToken.user_id == payload.get("sub"),
             RefreshToken.is_revoked == False
         ).first()
         
-        if db_token and verify_token_hash(token, db_token.token_hash):
+        if db_token:
             db_token.is_revoked = True
             db_token.revoked_at = datetime.now(timezone.utc)
             db.commit()
@@ -196,14 +200,18 @@ def verify_refresh_token(token: str, db: Session) -> Optional[Dict[str, Any]]:
         if payload.get("type") != "refresh":
             return None
             
+        # Calculate hash
+        token_hash = get_token_hash(token)
+            
         # Check database
         db_token = db.query(RefreshToken).filter(
+            RefreshToken.token_hash == token_hash,
             RefreshToken.user_id == payload.get("sub"),
             RefreshToken.is_revoked == False,
             RefreshToken.expires_at > datetime.now(timezone.utc)
         ).first()
         
-        if db_token and verify_token_hash(token, db_token.token_hash):
+        if db_token:
             return payload
             
     except JWTError:
@@ -231,7 +239,7 @@ def create_access_token_with_context(
         JWT token with organization context and roles
     """
     from app.models.user import User
-    from app.models.organization import Organization, OrganizationMember, MemberStatus
+    from app.models.organization import Organization, OrgMember, MemberStatus
     from app.models.rbac import Role
     
     # Get user
@@ -256,19 +264,29 @@ def create_access_token_with_context(
                 "type": organization.type.value,
                 "status": organization.status.value
             }
-            subscription_plan = organization.subscription_plan.value
+            subscription_plan = organization.subscription_plan.value if organization.subscription_plan else None
             
             # Get user's roles in this organization
-            membership = db.query(OrganizationMember).filter(
-                OrganizationMember.user_id == user_id,
-                OrganizationMember.organization_id == organization_id,
-                OrganizationMember.status == MemberStatus.ACTIVE
+            membership = db.query(OrgMember).filter(
+                OrgMember.user_id == user_id,
+                OrgMember.organization_id == organization_id,
+                OrgMember.status == MemberStatus.ACTIVE
             ).first()
             
-            if membership and membership.role_id:
-                role = db.query(Role).filter(Role.id == membership.role_id).first()
-                if role:
-                    user_roles = [role.role_type]
+            if membership and membership.roles:
+                 # Fetch primary role or all roles
+                 # Logic in models/organization.py shows roles via OrgMemberRole
+                 # We need to extract role codes.
+                 # membership.roles is a list of OrgMemberRole.
+                 # We want the Roles associated with them.
+                 
+                 # Optimized query might be better but let's stick to simple logic first
+                 # given lazy loading.
+                 # security.py imports models inside function to avoid circular deps.
+                 
+                for member_role in membership.roles:
+                    if member_role.role:
+                        user_roles.append(member_role.role.code)
     else:
         # If no organization specified, user is a freelancer
         user_roles = ["FREELANCER"]

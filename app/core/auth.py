@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import verify_token
-from app.core.exceptions import unauthorized_exception, PermissionError
+# Import custom exceptions
+from app.core.exceptions import unauthorized_exception, PermissionError, AuthenticationError
 from app.models.user import User
 from app.services.auth_service import AuthService
 
@@ -77,49 +78,19 @@ def get_current_active_user(
         User object
     
     Raises:
-        HTTPException: If user is not active
+        AuthenticationError: If user is not active
+        PermissionError: If organization is not approved
     """
     if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "success": False,
-                "message": "User account is inactive",
-                "error_code": "INACTIVE_USER"
-            }
+        raise AuthenticationError(
+            message="User account is inactive",
+            error_code="INACTIVE_USER"
         )
 
     # Function to check organization status
     # We import here to avoid circular imports
     from app.services.auth_service import AuthService
     
-    # Check if the user is a freelancer. If so, no org check needed.
-    # We can't easily get the DB session here because get_current_active_user doesn't depend on DB directly in the signature
-    # (it depends on get_current_user which does).
-    # However, 'current_user' is attached to the session if it came from get_current_user.
-    
-    # Let's inspect the user's memberships via relationship
-    # This relies on lazy loading or eager loading if configured.
-    # Note: Accessing relationship might trigger DB query if session is active.
-    
-    # Logic: If user belongs to ANY organization that is NOT approved, block access?
-    # Or only if they are trying to access that specific organization's data?
-    # Rigid Requirement: "Block access for unapproved tenants".
-    # Interpretation: If I am an Admin of "Farm A", and "Farm A" is not approved, I cannot log in or do actions.
-    
-    # We will iterate over memberships.
-    # (In a real app, we filter by the org_id in the request header/token).
-    
-    # For MVP: If the user has ANY membership in an unapproved org, we warn or block?
-    # Let's block if they have NO approved organizations and are NO freelancer.
-    
-    # Actually, simpler: Check all memberships. If they have a membership in an org where is_approved=False,
-    # AND they are not a Super Admin (who needs to login to approve it), block.
-    
-    # Super Admin check (naive based on email or role code)
-    # If we had the roles loaded.
-    
-    # Safe fallback: If organization.is_approved is False, raise 403.
     # Real implementation of Organization Approval Check
     if current_user.email == "superadmin@example.com":
         return current_user
@@ -129,9 +100,6 @@ def get_current_active_user(
     from app.models.organization import OrgMember, Organization, MemberStatus
     
     # Check if user has ANY active membership in an APPROVED organization
-    # OR if they are a freelancer (if we support that without org).
-    
-    # Query: Select 1 from OrgMember join Organization where user_id=uid and org.is_approved=True
     stmt = (
         db.query(OrgMember)
         .join(Organization)
@@ -140,10 +108,6 @@ def get_current_active_user(
         .filter(Organization.is_approved == True)
     )
     approved_membership = stmt.first()
-    
-    # Also check if they are in ANY organization at all?
-    # If they are in NO organization, maybe they are just a registered user (Freelancer?)
-    # If they ARE in an organization but it's not approved, we block.
     
     # Let's see if they are in an Unapproved Org
     stmt_unapproved = (
@@ -158,13 +122,9 @@ def get_current_active_user(
     if unapproved_membership and not approved_membership:
         # User is part of an unapproved org and NOT part of any approved org.
         # Block access.
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "success": False,
-                "message": "Your organization is awaiting approval.",
-                "error_code": "ORG_NOT_APPROVED"
-            }
+        raise PermissionError(
+            message="Your organization is awaiting approval.",
+            error_code="ORG_NOT_APPROVED"
         )
         
     return current_user
@@ -247,6 +207,7 @@ def get_current_freelancer(
     """
     auth_service = AuthService(db)
     
+    
     if not auth_service.is_freelancer(current_user.id):
         raise PermissionError(
             message="This feature is only available to freelancers",
@@ -254,4 +215,45 @@ def get_current_freelancer(
             details={"user_id": str(current_user.id)}
         )
     
+    return current_user
+
+
+def get_current_super_admin(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    Get current user and verify they are a Super Admin.
+    
+    This verifies the user has the 'SUPER_ADMIN' role in the default organization (or system-wide).
+    
+    Args:
+        current_user: Current authenticated user
+        db: Database session
+    
+    Returns:
+        User object
+    
+    Raises:
+        PermissionError: If user is not a Super Admin
+    """
+    from sqlalchemy import select
+    from app.models.rbac import Role
+    from app.models.organization import OrgMemberRole
+    
+    # Check if ANY OrgMemberRole for this user maps to a 'SUPER_ADMIN' role.
+    has_super_admin_role = (
+        db.query(OrgMemberRole)
+        .join(Role)
+        .filter(OrgMemberRole.user_id == current_user.id)
+        .filter(Role.code == "SUPER_ADMIN")
+        .first()
+    )
+    
+    if not has_super_admin_role:
+        raise PermissionError(
+            message="Super Admin privileges required",
+            error_code="SUPER_ADMIN_REQUIRED" # This matches the test expectation
+        )
+        
     return current_user

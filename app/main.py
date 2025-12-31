@@ -128,7 +128,7 @@ async def not_found_exception_handler(request: Request, exc: NotFoundError):
             "success": False,
             "message": exc.message,
             "error_code": exc.error_code,
-            "details": exc.details,
+            "data": exc.details,
             "request_id": getattr(request.state, "request_id", "unknown")
         }
     )
@@ -143,7 +143,7 @@ async def conflict_exception_handler(request: Request, exc: ConflictError):
             "success": False,
             "message": exc.message,
             "error_code": exc.error_code,
-            "details": exc.details,
+            "data": exc.details,
             "request_id": getattr(request.state, "request_id", "unknown")
         }
     )
@@ -158,7 +158,7 @@ async def app_validation_exception_handler(request: Request, exc: AppValidationE
             "success": False,
             "message": exc.message,
             "error_code": exc.error_code,
-            "details": exc.details,
+            "data": exc.details,
             "request_id": getattr(request.state, "request_id", "unknown")
         }
     )
@@ -173,7 +173,7 @@ async def permission_exception_handler(request: Request, exc: AppPermissionError
             "success": False,
             "message": exc.message,
             "error_code": exc.error_code,
-            "details": exc.details,
+            "data": exc.details,
             "request_id": getattr(request.state, "request_id", "unknown")
         }
     )
@@ -188,7 +188,7 @@ async def authentication_exception_handler(request: Request, exc: Authentication
             "success": False,
             "message": exc.message,
             "error_code": exc.error_code,
-            "details": exc.details,
+            "data": exc.details,
             "request_id": getattr(request.state, "request_id", "unknown")
         }
     )
@@ -203,7 +203,7 @@ async def service_exception_handler(request: Request, exc: ServiceError):
             "success": False,
             "message": exc.message,
             "error_code": exc.error_code,
-            "details": exc.details,
+            "data": exc.details,
             "request_id": getattr(request.state, "request_id", "unknown")
         }
     )
@@ -225,7 +225,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "success": False,
             "message": "Validation failed",
             "error_code": "VALIDATION_ERROR",
-            "details": {"field_errors": errors},
+            "data": {"field_errors": errors},
             "request_id": getattr(request.state, "request_id", "unknown")
         }
     )
