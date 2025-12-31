@@ -42,6 +42,7 @@ def seed_data():
             {"code": "ADMIN", "name": "Organization Admin", "scope": UserRoleScope.ORGANIZATION},
             {"code": "FARMER", "name": "Farmer", "scope": UserRoleScope.ORGANIZATION},
             {"code": "FIELD_OBSERVER", "name": "Field Observer", "scope": UserRoleScope.ORGANIZATION},
+            {"code": "FREELANCER", "name": "Freelancer", "scope": UserRoleScope.SYSTEM},
         ]
         
         db_roles = {}
