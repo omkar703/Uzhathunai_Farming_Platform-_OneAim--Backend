@@ -7,7 +7,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/farm_db
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/uzhathunai_db_v2
       - REDIS_URL=redis://redis:6379/0
       - ENVIRONMENT=development
     depends_on:

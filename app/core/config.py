@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     MAIL_PORT: int = 587
     MAIL_SERVER: str = ""
     MAIL_FROM_NAME: str = "Uzhathunai Platform"
+
+    # Zoom Configuration
+    ZOOM_ACCOUNT_ID: str = ""
+    ZOOM_CLIENT_ID: str = ""
+    ZOOM_CLIENT_SECRET: str = ""
+    ZOOM_ADMIN_EMAIL: str = ""
     
     # File Upload Configuration
     MAX_UPLOAD_SIZE: int = 10485760  # 10MB
@@ -66,6 +72,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
 
 settings = Settings()

@@ -24,7 +24,8 @@ from app.api.v1 import (
     crops,
     crop_yields,
     crop_photos,
-    notifications
+    notifications,
+    video_zoom
 )
 from app.api.v1.farm_audit import option_sets, parameters, sections, templates, audits, reports
 from app.api.v1.bff import farming_dashboard, fsp_dashboard
@@ -100,3 +101,6 @@ api_router.include_router(reports.router, prefix="/farm-audit", tags=["Farm Audi
 # Include BFF (Backend For Frontend) routes
 api_router.include_router(farming_dashboard.router, prefix="/bff", tags=["BFF - Dashboard"])
 api_router.include_router(fsp_dashboard.router, prefix="/bff", tags=["BFF - Dashboard"])
+
+# Include video session routes
+api_router.include_router(video_zoom.router, prefix="/video", tags=["Video Consultations"])

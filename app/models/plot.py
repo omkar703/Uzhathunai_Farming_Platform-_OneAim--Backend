@@ -26,7 +26,7 @@ class Plot(Base):
     farm_id = Column(UUID(as_uuid=True), ForeignKey('farms.id', ondelete='CASCADE'), nullable=False)
     name = Column(String(200), nullable=False)
     description = Column(Text)
-    boundary = Column(Geography(geometry_type='POLYGON', srid=4326))
+    boundary = Column(Geography(geometry_type='POLYGON', srid=4326, spatial_index=False))
     area = Column(Numeric(15, 4))
     area_unit_id = Column(UUID(as_uuid=True), ForeignKey('measurement_units.id'))
     plot_attributes = Column(JSONB)  # {"soil_ec": 2.5, "soil_ph": 6.8, "water_ec": 1.2, "water_ph": 7.0}

@@ -30,8 +30,8 @@ class Farm(Base):
     district = Column(String(100))
     state = Column(String(100))
     pincode = Column(String(20))
-    location = Column(Geography(geometry_type='POINT', srid=4326))
-    boundary = Column(Geography(geometry_type='POLYGON', srid=4326))
+    location = Column(Geography(geometry_type='POINT', srid=4326, spatial_index=False))
+    boundary = Column(Geography(geometry_type='POLYGON', srid=4326, spatial_index=False))
     area = Column(Numeric(15, 4))
     area_unit_id = Column(UUID(as_uuid=True), ForeignKey('measurement_units.id'))
     farm_attributes = Column(JSONB)  # {"soil_ec": 2.5, "soil_ph": 6.8, "water_ec": 1.2, "water_ph": 7.0}
