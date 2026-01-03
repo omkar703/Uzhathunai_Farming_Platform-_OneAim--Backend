@@ -14,11 +14,13 @@ from app.services.zoom_service import zoom_service
 
 router = APIRouter()
 
+from typing import Optional
+
 class ScheduleMeetingRequest(BaseModel):
     work_order_id: UUID
     topic: str
-    start_time: datetime
-    duration: int # minutes
+    start_time: Optional[datetime] = None
+    duration: int = 45 # Default 45 mins
 
 class MeetingResponse(BaseModel):
     message: str
@@ -92,15 +94,28 @@ async def schedule_meeting(
     if not work_order:
         raise HTTPException(status_code=404, detail="Work Order not found")
         
-    # 2. Authorization (Only FSP involved in Work Order can schedule? Or any valid user?)
-    # Assuming standard permission check:
-    # if work_order.fsp_organization_id not in user_orgs... (Skipping complex RBAC for MVP, assuming FSP logged in)
+    # 2. Authorization & Validation
+    start_time = request.start_time or datetime.utcnow()
     
+    # Check if organizations are approved to prevent 403s later in Zoom
+    from app.models.organization import Organization
+    fsp_org = db.query(Organization).filter(Organization.id == work_order.fsp_organization_id).first()
+    farm_org = db.query(Organization).filter(Organization.id == work_order.farming_organization_id).first()
+    
+    if not (fsp_org and fsp_org.is_approved) or not (farm_org and farm_org.is_approved):
+         raise HTTPException(
+             status_code=403, 
+             detail={
+                 "message": "Your organization is awaiting approval.",
+                 "error_code": "ORG_NOT_APPROVED"
+             }
+         )
+
     # 3. Create PENDING Session
     video_session = VideoSession(
         work_order_id=request.work_order_id,
         topic=request.topic,
-        start_time=request.start_time,
+        start_time=start_time,
         duration=request.duration,
         status=VideoSessionStatus.PENDING,
         created_by=current_user.id
@@ -114,7 +129,7 @@ async def schedule_meeting(
         process_zoom_meeting, 
         video_session.id, 
         request.topic, 
-        request.start_time, 
+        start_time, 
         request.duration
     )
     

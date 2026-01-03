@@ -6,6 +6,8 @@ services:
     container_name: farm_backend
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/uzhathunai_db_v2
       - REDIS_URL=redis://redis:6379/0

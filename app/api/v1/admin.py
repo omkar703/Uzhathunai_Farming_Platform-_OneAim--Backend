@@ -12,6 +12,10 @@ from app.models.rbac import Role
 from app.core.auth import get_current_super_admin
 from app.schemas.response import BaseResponse
 
+from app.schemas.organization import OrganizationResponse
+from typing import List, Optional
+from fastapi import Query
+
 router = APIRouter()
 
 @router.post(
@@ -60,3 +64,51 @@ async def approve_organization(
         }
     }
 
+
+@router.get(
+    "/organizations",
+    status_code=status.HTTP_200_OK,
+    summary="List organizations",
+    description="List all organizations with filtering and pagination. Only accessible by Super Admins."
+)
+async def list_organizations(
+    status: Optional[OrganizationStatus] = Query(None),
+    is_approved: Optional[bool] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_super_admin),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    List organizations with optional filters.
+    """
+    query = db.query(Organization)
+    
+    if status:
+        query = query.filter(Organization.status == status)
+    if is_approved is not None:
+        query = query.filter(Organization.is_approved == is_approved)
+        
+    total = query.count()
+    offset = (page - 1) * limit
+    orgs = query.offset(offset).limit(limit).all()
+    
+    return {
+        "success": True,
+        "message": "Organizations retrieved successfully",
+        "data": {
+            "items": [
+                {
+                    "id": str(o.id),
+                    "name": o.name,
+                    "type": o.organization_type.value,
+                    "status": o.status.value,
+                    "is_approved": o.is_approved,
+                    "created_at": o.created_at.isoformat() if o.created_at else None
+                } for o in orgs
+            ],
+            "total": total,
+            "page": page,
+            "limit": limit
+        }
+    }
