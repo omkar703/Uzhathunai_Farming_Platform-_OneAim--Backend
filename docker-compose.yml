@@ -1,17 +1,22 @@
-version: '3.8'
-
-services:
+services: 
   web:
     build: .
+    image: farm-backend
     container_name: farm_backend
     ports:
       - "8000:8000"
     env_file:
       - .env
     environment:
+<<<<<<< HEAD
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/uzhathunai_db_v2
       - REDIS_URL=redis://redis:6379/0
       - ENVIRONMENT=development
+=======
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/farm_db
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: development
+>>>>>>> a8f27eb (Update docker setup and requirements)
     depends_on:
       - db
       - redis
@@ -20,9 +25,9 @@ services:
     image: postgis/postgis:15-3.3
     container_name: farm_db
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=farm_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: farm_db
     ports:
       - "5432:5432"
     volumes:
