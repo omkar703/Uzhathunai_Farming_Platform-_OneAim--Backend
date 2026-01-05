@@ -13,7 +13,7 @@ from app.models.user import User, RefreshToken
 from app.core.security import get_password_hash
 
 # Test database URL (use actual PostgreSQL database)
-TEST_DATABASE_URL = "postgresql://postgres:admin@localhost:5432/uzhathunai_db_v2"
+TEST_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/uzhathunai_db_v2"
 
 # Create test engine
 engine = create_engine(TEST_DATABASE_URL)

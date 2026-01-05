@@ -7,7 +7,7 @@ from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
 import io
-from fastapi import APIRouter, Depends, Query, status, UploadFile, File, Form, Body
+from fastapi import APIRouter, Depends, Query, status, UploadFile, File, Form, Body, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_active_user
@@ -48,6 +48,7 @@ from app.services.response_service import ResponseService
 from app.services.photo_service import PhotoService
 from app.services.workflow_service import WorkflowService
 from app.services.review_service import ReviewService
+from app.services.remote_audit_service import RemoteAuditService
 from app.services.finalization_service import FinalizationService
 from app.services.sharing_service import SharingService
 
@@ -499,6 +500,56 @@ def delete_photo(
     )
 
     return None
+
+
+@router.post(
+    "/audits/{audit_id}/capture",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Capture remote audit snapshot",
+    description="Capture a live snapshot from a Zoom video call and attach it to an audit."
+)
+async def capture_snapshot(
+    audit_id: UUID,
+    background_tasks: BackgroundTasks,
+    session_id: UUID = Form(...),
+    file: UploadFile = File(...),
+    response_id: Optional[UUID] = Form(None),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Capture a live snapshot from a video session.
+    
+    Validates that the audit and video session are linked to the same work order.
+    Processes the image in the background to avoid blocking the video call stream.
+    """
+    service = RemoteAuditService(db)
+    
+    # 1. Validate session and audit link
+    service.validate_snapshot_session(audit_id, session_id)
+    
+    # 2. Read file data
+    file_data = await file.read()
+    
+    # 3. Queue background processing
+    background_tasks.add_task(
+        service.process_snapshot,
+        audit_id=audit_id,
+        session_id=session_id,
+        file_data=file_data,
+        user_id=current_user.id,
+        response_id=response_id
+    )
+    
+    return {
+        "success": True,
+        "message": "Snapshot capture initiated successfully",
+        "data": {
+            "audit_id": str(audit_id),
+            "session_id": str(session_id)
+        },
+        "error_code": None
+    }
 
 
 # Status Transition Endpoints

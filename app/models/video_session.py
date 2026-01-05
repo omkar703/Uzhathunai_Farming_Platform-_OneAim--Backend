@@ -28,6 +28,9 @@ class VideoSession(Base):
     # Link to Work Order
     work_order_id = Column(UUID(as_uuid=True), ForeignKey('work_orders.id', ondelete='CASCADE'), nullable=False, index=True)
     
+    # Link to Audit (optional, for remote audits)
+    audit_id = Column(UUID(as_uuid=True), ForeignKey('audits.id', ondelete='SET NULL'), nullable=True, index=True)
+    
     # Zoom Details
     zoom_meeting_id = Column(String(50), nullable=True, index=True)
     join_url = Column(Text, nullable=True) # For participants
@@ -47,6 +50,7 @@ class VideoSession(Base):
 
     # Relationships
     work_order = relationship("WorkOrder")
+    audit = relationship("Audit")
     creator = relationship("User", foreign_keys=[created_by])
 
     def __repr__(self):

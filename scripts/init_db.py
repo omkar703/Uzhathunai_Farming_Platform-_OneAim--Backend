@@ -1,3 +1,4 @@
+from datetime import datetime
 from app.core.database import Base, engine, SessionLocal
 from app.models.user import User
 from app.models.work_order import WorkOrder
@@ -72,8 +73,48 @@ def init_db():
                 print(f"Role {r_data['code']} exists.")
         db.commit()
         print("Seeded Roles.")
+
+        # Create Super Admin User
+        from app.core.security import get_password_hash
+        from app.models.organization import OrgMemberRole
+
+        admin_email = "superadmin@example.com"
+        admin_password = "Password123"
+
+        admin_user = db.query(User).filter(User.email == admin_email).first()
+        if not admin_user:
+            print(f"Seeding Super Admin User: {admin_email}...")
+            admin_user = User(
+                email=admin_email,
+                password_hash=get_password_hash(admin_password),
+                first_name="Super",
+                last_name="Admin",
+                is_active=True,
+                is_verified=True
+            )
+            db.add(admin_user)
+            db.flush()
+
+            # Assign SUPER_ADMIN role
+            super_role = db.query(Role).filter(Role.code == "SUPER_ADMIN").first()
+            if super_role:
+                print("Assigning SUPER_ADMIN role to user...")
+                member_role = OrgMemberRole(
+                    user_id=admin_user.id,
+                    role_id=super_role.id,
+                    is_primary=True,
+                    assigned_at=datetime.utcnow()
+                )
+                db.add(member_role)
+            
+            db.commit()
+            print("Super Admin user created successfully.")
+        else:
+            print(f"Super Admin user {admin_email} already exists.")
             
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Error seeding data: {e}")
     finally:
         db.close()

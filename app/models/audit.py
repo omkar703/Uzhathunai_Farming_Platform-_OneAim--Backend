@@ -13,7 +13,7 @@ from sqlalchemy.sql import func
 import uuid
 
 from app.core.database import Base
-from app.models.enums import AuditStatus, SyncStatus, IssueSeverity
+from app.models.enums import AuditStatus, SyncStatus, IssueSeverity, PhotoSourceType
 
 
 class Audit(Base):
@@ -143,14 +143,17 @@ class AuditResponsePhoto(Base):
     __tablename__ = "audit_response_photos"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    audit_response_id = Column(UUID(as_uuid=True), ForeignKey("audit_responses.id", ondelete="CASCADE"), nullable=False)
+    audit_id = Column(UUID(as_uuid=True), ForeignKey("audits.id", ondelete="CASCADE"), nullable=True, index=True)
+    audit_response_id = Column(UUID(as_uuid=True), ForeignKey("audit_responses.id", ondelete="CASCADE"), nullable=True)
     file_url = Column(String(500), nullable=False)
     file_key = Column(String(500), nullable=True)
     caption = Column(Text, nullable=True)
+    source_type = Column(SQLEnum(PhotoSourceType, name='photo_source_type'), default=PhotoSourceType.MANUAL_UPLOAD, nullable=False)
     uploaded_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     # Relationships
+    audit = relationship("Audit", foreign_keys=[audit_id])
     response = relationship("AuditResponse", back_populates="photos")
     uploader = relationship("User", foreign_keys=[uploaded_by])
 

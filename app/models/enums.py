@@ -155,3 +155,9 @@ class IssueSeverity(str, PyEnum):
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
     CRITICAL = "CRITICAL"
+
+
+class PhotoSourceType(str, PyEnum):
+    """Photo source type enum - tracks origin of the photo"""
+    LIVE_CAPTURE = "LIVE_CAPTURE"
+    MANUAL_UPLOAD = "MANUAL_UPLOAD"
