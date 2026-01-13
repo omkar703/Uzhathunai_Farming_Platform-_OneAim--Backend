@@ -1,0 +1,538 @@
+-- ============================================
+-- PRE-WORK ORDER INTERACTIONS MODULE
+-- ============================================
+-- Version: 1.0
+-- Date: December 7, 2025
+-- Description: Database schema for pre-work order interactions including
+--              marketplace inquiries, quote requests, consultations,
+--              FSP portfolio, and enhanced review system
+-- Reference: docs/PRE_WORK_ORDER_INTERACTIONS.md
+
+-- Enable required extensions (if not already enabled)
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ============================================
+-- CUSTOM TYPES
+-- ============================================
+
+-- Inquiry types
+CREATE TYPE inquiry_type AS ENUM ('QUESTION', 'QUOTE', 'CONSULTATION');
+
+-- Inquiry status
+CREATE TYPE inquiry_status AS ENUM ('NEW', 'RESPONDED', 'CONVERTED', 'CLOSED');
+
+-- Urgency levels
+CREATE TYPE urgency_level AS ENUM ('URGENT', 'NORMAL', 'FLEXIBLE');
+
+-- Quote request status
+CREATE TYPE quote_request_status AS ENUM ('NEW', 'QUOTED', 'ACCEPTED', 'DECLINED', 'EXPIRED');
+
+-- Quote status
+CREATE TYPE quote_status AS ENUM ('SENT', 'VIEWED', 'ACCEPTED', 'DECLINED');
+
+-- Consultation types
+CREATE TYPE consultation_type AS ENUM ('PHONE', 'VIDEO', 'FARM_VISIT', 'CHAT');
+
+-- Consultation status
+CREATE TYPE consultation_status AS ENUM ('REQUESTED', 'CONFIRMED', 'COMPLETED', 'CANCELLED');
+
+-- Time slot proposer
+CREATE TYPE time_slot_proposer AS ENUM ('FARMER', 'FSP');
+
+-- Portfolio media types
+CREATE TYPE portfolio_media_type AS ENUM ('PHOTO', 'VIDEO', 'DOCUMENT');
+
+-- ============================================
+-- MARKETPLACE INQUIRIES
+-- ============================================
+
+-- Main inquiries table
+CREATE TABLE marketplace_inquiries (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    farmer_org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    fsp_org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    farm_id UUID REFERENCES farms(id) ON DELETE SET NULL,
+    inquiry_type inquiry_type NOT NULL,
+    subject VARCHAR(200) NOT NULL,
+    message TEXT NOT NULL,
+    status inquiry_status NOT NULL DEFAULT 'NEW',
+    urgency urgency_level,
+    created_by UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    responded_at TIMESTAMP WITH TIME ZONE,
+    converted_to_work_order_id UUID REFERENCES work_orders(id) ON DELETE SET NULL,
+    CONSTRAINT fk_farmer_org FOREIGN KEY (farmer_org_id) REFERENCES organizations(id),
+    CONSTRAINT fk_fsp_org FOREIGN KEY (fsp_org_id) REFERENCES organizations(id)
+);
+
+CREATE INDEX idx_inquiries_farmer ON marketplace_inquiries(farmer_org_id);
+CREATE INDEX idx_inquiries_fsp ON marketplace_inquiries(fsp_org_id);
+CREATE INDEX idx_inquiries_status ON marketplace_inquiries(status);
+CREATE INDEX idx_inquiries_created_at ON marketplace_inquiries(created_at);
+CREATE INDEX idx_inquiries_farm ON marketplace_inquiries(farm_id);
+
+COMMENT ON TABLE marketplace_inquiries IS 'Lightweight inquiries from farmers to FSPs before formal work order creation';
+COMMENT ON COLUMN marketplace_inquiries.inquiry_type IS 'Type of inquiry: QUESTION, QUOTE, or CONSULTATION';
+COMMENT ON COLUMN marketplace_inquiries.converted_to_work_order_id IS 'Reference to work order if inquiry was converted';
+
+-- Inquiry messages (threaded conversation)
+CREATE TABLE inquiry_messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    inquiry_id UUID NOT NULL REFERENCES marketplace_inquiries(id) ON DELETE CASCADE,
+    sender_user_id UUID NOT NULL REFERENCES users(id),
+    sender_org_id UUID NOT NULL REFERENCES organizations(id),
+    message TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_inquiry FOREIGN KEY (inquiry_id) REFERENCES marketplace_inquiries(id)
+);
+
+CREATE INDEX idx_inquiry_messages_inquiry ON inquiry_messages(inquiry_id);
+CREATE INDEX idx_inquiry_messages_created_at ON inquiry_messages(created_at);
+
+COMMENT ON TABLE inquiry_messages IS 'Threaded messages within an inquiry conversation';
+
+-- Inquiry attachments (photos/documents)
+CREATE TABLE inquiry_attachments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    inquiry_id UUID REFERENCES marketplace_inquiries(id) ON DELETE CASCADE,
+    message_id UUID REFERENCES inquiry_messages(id) ON DELETE CASCADE,
+    file_url VARCHAR(500) NOT NULL,
+    file_key VARCHAR(500),
+    file_name VARCHAR(255) NOT NULL,
+    file_type VARCHAR(50) NOT NULL,
+    file_size INTEGER NOT NULL,
+    uploaded_by UUID NOT NULL REFERENCES users(id),
+    uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_parent CHECK (
+        (inquiry_id IS NOT NULL AND message_id IS NULL) OR
+        (inquiry_id IS NULL AND message_id IS NOT NULL)
+    )
+);
+
+CREATE INDEX idx_inquiry_attachments_inquiry ON inquiry_attachments(inquiry_id);
+CREATE INDEX idx_inquiry_attachments_message ON inquiry_attachments(message_id);
+
+COMMENT ON TABLE inquiry_attachments IS 'File attachments for inquiries or inquiry messages';
+COMMENT ON CONSTRAINT chk_parent ON inquiry_attachments IS 'Attachment must belong to either inquiry or message, not both';
+
+-- ============================================
+-- QUOTE REQUESTS & QUOTES
+-- ============================================
+
+-- Quote requests from farmers
+CREATE TABLE quote_requests (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    farmer_org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    fsp_org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    farm_id UUID NOT NULL REFERENCES farms(id) ON DELETE CASCADE,
+    service_type VARCHAR(100) NOT NULL,
+    crop_id UUID REFERENCES crops(id) ON DELETE SET NULL,
+    farm_size DECIMAL(10,2),
+    details TEXT,
+    urgency urgency_level,
+    status quote_request_status NOT NULL DEFAULT 'NEW',
+    created_by UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    quoted_at TIMESTAMP WITH TIME ZONE,
+    responded_at TIMESTAMP WITH TIME ZONE,
+    converted_to_work_order_id UUID REFERENCES work_orders(id) ON DELETE SET NULL,
+    CONSTRAINT fk_farmer_org FOREIGN KEY (farmer_org_id) REFERENCES organizations(id),
+    CONSTRAINT fk_fsp_org FOREIGN KEY (fsp_org_id) REFERENCES organizations(id)
+);
+
+CREATE INDEX idx_quote_requests_farmer ON quote_requests(farmer_org_id);
+CREATE INDEX idx_quote_requests_fsp ON quote_requests(fsp_org_id);
+CREATE INDEX idx_quote_requests_status ON quote_requests(status);
+CREATE INDEX idx_quote_requests_created_at ON quote_requests(created_at);
+CREATE INDEX idx_quote_requests_farm ON quote_requests(farm_id);
+
+COMMENT ON TABLE quote_requests IS 'Price estimate requests from farmers to FSPs';
+COMMENT ON COLUMN quote_requests.service_type IS 'Type of service requested (e.g., Soil Testing, Crop Audit)';
+
+-- Quotes provided by FSPs
+CREATE TABLE quotes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    quote_request_id UUID NOT NULL REFERENCES quote_requests(id) ON DELETE CASCADE,
+    fsp_org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    total_cost DECIMAL(10,2) NOT NULL,
+    currency VARCHAR(10) DEFAULT 'INR',
+    estimated_duration_days INTEGER,
+    scope_of_work TEXT,
+    deliverables TEXT,
+    terms_and_conditions TEXT,
+    valid_until DATE NOT NULL,
+    status quote_status NOT NULL DEFAULT 'SENT',
+    created_by UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    viewed_at TIMESTAMP WITH TIME ZONE,
+    responded_at TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT fk_quote_request FOREIGN KEY (quote_request_id) REFERENCES quote_requests(id)
+);
+
+CREATE INDEX idx_quotes_request ON quotes(quote_request_id);
+CREATE INDEX idx_quotes_status ON quotes(status);
+CREATE INDEX idx_quotes_valid_until ON quotes(valid_until);
+
+COMMENT ON TABLE quotes IS 'Price quotes provided by FSPs in response to quote requests';
+COMMENT ON COLUMN quotes.valid_until IS 'Date until which the quote is valid';
+
+-- Quote line items (cost breakdown)
+CREATE TABLE quote_line_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    quote_id UUID NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+    description VARCHAR(255) NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    sequence_number INTEGER NOT NULL,
+    CONSTRAINT fk_quote FOREIGN KEY (quote_id) REFERENCES quotes(id)
+);
+
+CREATE INDEX idx_quote_items_quote ON quote_line_items(quote_id);
+CREATE INDEX idx_quote_items_sequence ON quote_line_items(quote_id, sequence_number);
+
+COMMENT ON TABLE quote_line_items IS 'Itemized cost breakdown for quotes';
+
+-- Quote request attachments
+CREATE TABLE quote_request_attachments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    quote_request_id UUID NOT NULL REFERENCES quote_requests(id) ON DELETE CASCADE,
+    file_url VARCHAR(500) NOT NULL,
+    file_key VARCHAR(500),
+    file_name VARCHAR(255) NOT NULL,
+    file_type VARCHAR(50) NOT NULL,
+    file_size INTEGER NOT NULL,
+    uploaded_by UUID NOT NULL REFERENCES users(id),
+    uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_quote_request_attachments_request ON quote_request_attachments(quote_request_id);
+
+COMMENT ON TABLE quote_request_attachments IS 'File attachments for quote requests (photos, documents)';
+
+-- ============================================
+-- CONSULTATIONS
+-- ============================================
+
+-- Consultation requests and bookings
+CREATE TABLE consultations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    farmer_org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    fsp_org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    farm_id UUID REFERENCES farms(id) ON DELETE SET NULL,
+    consultation_type consultation_type NOT NULL,
+    topic TEXT NOT NULL,
+    urgency urgency_level,
+    status consultation_status NOT NULL DEFAULT 'REQUESTED',
+    scheduled_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    duration_minutes INTEGER,
+    contact_details JSONB,
+    farmer_notes TEXT,
+    fsp_notes TEXT,
+    fsp_summary TEXT,
+    created_by UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    converted_to_work_order_id UUID REFERENCES work_orders(id) ON DELETE SET NULL,
+    CONSTRAINT fk_farmer_org FOREIGN KEY (farmer_org_id) REFERENCES organizations(id),
+    CONSTRAINT fk_fsp_org FOREIGN KEY (fsp_org_id) REFERENCES organizations(id)
+);
+
+CREATE INDEX idx_consultations_farmer ON consultations(farmer_org_id);
+CREATE INDEX idx_consultations_fsp ON consultations(fsp_org_id);
+CREATE INDEX idx_consultations_status ON consultations(status);
+CREATE INDEX idx_consultations_scheduled ON consultations(scheduled_at);
+CREATE INDEX idx_consultations_farm ON consultations(farm_id);
+
+COMMENT ON TABLE consultations IS 'Consultation requests and bookings between farmers and FSPs';
+COMMENT ON COLUMN consultations.contact_details IS 'JSONB: {"phone": "+91...", "video_link": "https://...", "address": "..."}';
+COMMENT ON COLUMN consultations.fsp_summary IS 'Post-consultation summary provided by FSP';
+
+-- Consultation time slots (proposed times)
+CREATE TABLE consultation_time_slots (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    consultation_id UUID NOT NULL REFERENCES consultations(id) ON DELETE CASCADE,
+    proposed_by time_slot_proposer NOT NULL,
+    slot_datetime TIMESTAMP WITH TIME ZONE NOT NULL,
+    is_selected BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_consultation FOREIGN KEY (consultation_id) REFERENCES consultations(id)
+);
+
+CREATE INDEX idx_consultation_slots_consultation ON consultation_time_slots(consultation_id);
+CREATE INDEX idx_consultation_slots_datetime ON consultation_time_slots(slot_datetime);
+
+COMMENT ON TABLE consultation_time_slots IS 'Proposed time slots for consultations';
+COMMENT ON COLUMN consultation_time_slots.proposed_by IS 'Who proposed this time slot: FARMER or FSP';
+
+-- Consultation attachments
+CREATE TABLE consultation_attachments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    consultation_id UUID NOT NULL REFERENCES consultations(id) ON DELETE CASCADE,
+    file_url VARCHAR(500) NOT NULL,
+    file_key VARCHAR(500),
+    file_name VARCHAR(255) NOT NULL,
+    file_type VARCHAR(50) NOT NULL,
+    file_size INTEGER NOT NULL,
+    uploaded_by UUID NOT NULL REFERENCES users(id),
+    uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_consultation_attachments_consultation ON consultation_attachments(consultation_id);
+
+COMMENT ON TABLE consultation_attachments IS 'File attachments for consultations (photos, documents)';
+
+-- ============================================
+-- FSP PORTFOLIO & SHOWCASE
+-- ============================================
+
+-- FSP portfolio case studies
+CREATE TABLE fsp_portfolio_case_studies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    fsp_org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    client_name VARCHAR(255),
+    location VARCHAR(100),
+    farm_size DECIMAL(10,2),
+    crop_type VARCHAR(100),
+    challenge TEXT NOT NULL,
+    solution TEXT NOT NULL,
+    results TEXT NOT NULL,
+    duration_description VARCHAR(100),
+    service_types VARCHAR(255),
+    client_testimonial TEXT,
+    is_published BOOLEAN DEFAULT FALSE,
+    created_by UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_fsp_org FOREIGN KEY (fsp_org_id) REFERENCES organizations(id)
+);
+
+CREATE INDEX idx_case_studies_fsp ON fsp_portfolio_case_studies(fsp_org_id);
+CREATE INDEX idx_case_studies_published ON fsp_portfolio_case_studies(is_published);
+CREATE INDEX idx_case_studies_created_at ON fsp_portfolio_case_studies(created_at);
+
+COMMENT ON TABLE fsp_portfolio_case_studies IS 'Case studies showcasing FSP work and results';
+COMMENT ON COLUMN fsp_portfolio_case_studies.client_name IS 'Optional client name (can be anonymous)';
+COMMENT ON COLUMN fsp_portfolio_case_studies.is_published IS 'Whether case study is visible to public';
+
+-- FSP portfolio media (photos, videos, documents)
+CREATE TABLE fsp_portfolio_media (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    fsp_org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    case_study_id UUID REFERENCES fsp_portfolio_case_studies(id) ON DELETE CASCADE,
+    media_type portfolio_media_type NOT NULL,
+    file_url VARCHAR(500) NOT NULL,
+    file_key VARCHAR(500),
+    file_name VARCHAR(255) NOT NULL,
+    caption TEXT,
+    display_order INTEGER DEFAULT 0,
+    is_before_photo BOOLEAN DEFAULT FALSE,
+    is_after_photo BOOLEAN DEFAULT FALSE,
+    uploaded_by UUID NOT NULL REFERENCES users(id),
+    uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_fsp_org FOREIGN KEY (fsp_org_id) REFERENCES organizations(id)
+);
+
+CREATE INDEX idx_portfolio_media_fsp ON fsp_portfolio_media(fsp_org_id);
+CREATE INDEX idx_portfolio_media_case_study ON fsp_portfolio_media(case_study_id);
+CREATE INDEX idx_portfolio_media_display_order ON fsp_portfolio_media(case_study_id, display_order);
+
+COMMENT ON TABLE fsp_portfolio_media IS 'Media files for FSP portfolio (photos, videos, documents)';
+COMMENT ON COLUMN fsp_portfolio_media.case_study_id IS 'Optional link to case study, NULL for general portfolio media';
+
+-- FSP certifications
+CREATE TABLE fsp_certifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    fsp_org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    certification_name VARCHAR(255) NOT NULL,
+    issuing_organization VARCHAR(255) NOT NULL,
+    issue_date DATE NOT NULL,
+    expiry_date DATE,
+    certificate_file_url VARCHAR(500),
+    certificate_file_key VARCHAR(500),
+    is_verified BOOLEAN DEFAULT FALSE,
+    created_by UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_fsp_org FOREIGN KEY (fsp_org_id) REFERENCES organizations(id)
+);
+
+CREATE INDEX idx_certifications_fsp ON fsp_certifications(fsp_org_id);
+CREATE INDEX idx_certifications_expiry ON fsp_certifications(expiry_date);
+
+COMMENT ON TABLE fsp_certifications IS 'Professional certifications and credentials for FSPs';
+COMMENT ON COLUMN fsp_certifications.is_verified IS 'Whether certification has been verified by platform';
+
+-- ============================================
+-- ENHANCED REVIEW & RATING SYSTEM
+-- ============================================
+
+-- Reviews (enhanced with multi-dimensional ratings)
+CREATE TABLE reviews (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    farmer_org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    fsp_org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    work_order_id UUID REFERENCES work_orders(id) ON DELETE SET NULL,
+    consultation_id UUID REFERENCES consultations(id) ON DELETE SET NULL,
+    
+    -- Overall rating
+    overall_rating INTEGER NOT NULL CHECK (overall_rating >= 1 AND overall_rating <= 5),
+    
+    -- Category ratings
+    quality_rating INTEGER CHECK (quality_rating >= 1 AND quality_rating <= 5),
+    timeliness_rating INTEGER CHECK (timeliness_rating >= 1 AND timeliness_rating <= 5),
+    communication_rating INTEGER CHECK (communication_rating >= 1 AND communication_rating <= 5),
+    value_rating INTEGER CHECK (value_rating >= 1 AND value_rating <= 5),
+    professionalism_rating INTEGER CHECK (professionalism_rating >= 1 AND professionalism_rating <= 5),
+    
+    -- Review content
+    review_title VARCHAR(255),
+    review_text TEXT,
+    would_recommend BOOLEAN,
+    
+    -- FSP response
+    fsp_response TEXT,
+    fsp_responded_at TIMESTAMP WITH TIME ZONE,
+    fsp_responded_by UUID REFERENCES users(id),
+    
+    -- Metadata
+    created_by UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    is_published BOOLEAN DEFAULT TRUE,
+    helpful_count INTEGER DEFAULT 0,
+    not_helpful_count INTEGER DEFAULT 0,
+    
+    CONSTRAINT fk_farmer_org FOREIGN KEY (farmer_org_id) REFERENCES organizations(id),
+    CONSTRAINT fk_fsp_org FOREIGN KEY (fsp_org_id) REFERENCES organizations(id),
+    CONSTRAINT chk_source CHECK (
+        (work_order_id IS NOT NULL AND consultation_id IS NULL) OR
+        (work_order_id IS NULL AND consultation_id IS NOT NULL)
+    )
+);
+
+CREATE INDEX idx_reviews_farmer ON reviews(farmer_org_id);
+CREATE INDEX idx_reviews_fsp ON reviews(fsp_org_id);
+CREATE INDEX idx_reviews_work_order ON reviews(work_order_id);
+CREATE INDEX idx_reviews_consultation ON reviews(consultation_id);
+CREATE INDEX idx_reviews_rating ON reviews(overall_rating);
+CREATE INDEX idx_reviews_created_at ON reviews(created_at);
+CREATE INDEX idx_reviews_published ON reviews(is_published);
+
+COMMENT ON TABLE reviews IS 'Enhanced reviews with multi-dimensional ratings for FSPs';
+COMMENT ON COLUMN reviews.overall_rating IS 'Overall rating from 1-5 stars';
+COMMENT ON COLUMN reviews.quality_rating IS 'Quality of service rating (1-5)';
+COMMENT ON COLUMN reviews.timeliness_rating IS 'Timeliness rating (1-5)';
+COMMENT ON COLUMN reviews.communication_rating IS 'Communication rating (1-5)';
+COMMENT ON COLUMN reviews.value_rating IS 'Value for money rating (1-5)';
+COMMENT ON COLUMN reviews.professionalism_rating IS 'Professionalism rating (1-5)';
+COMMENT ON CONSTRAINT chk_source ON reviews IS 'Review must be for either work order or consultation, not both';
+
+-- Review photos
+CREATE TABLE review_photos (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+    file_url VARCHAR(500) NOT NULL,
+    file_key VARCHAR(500),
+    file_name VARCHAR(255) NOT NULL,
+    caption TEXT,
+    display_order INTEGER DEFAULT 0,
+    uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_review FOREIGN KEY (review_id) REFERENCES reviews(id)
+);
+
+CREATE INDEX idx_review_photos_review ON review_photos(review_id);
+CREATE INDEX idx_review_photos_display_order ON review_photos(review_id, display_order);
+
+COMMENT ON TABLE review_photos IS 'Photos attached to reviews';
+
+-- Review helpfulness tracking
+CREATE TABLE review_helpfulness (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    is_helpful BOOLEAN NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_review FOREIGN KEY (review_id) REFERENCES reviews(id),
+    CONSTRAINT unique_user_review UNIQUE (review_id, user_id)
+);
+
+CREATE INDEX idx_review_helpfulness_review ON review_helpfulness(review_id);
+CREATE INDEX idx_review_helpfulness_user ON review_helpfulness(user_id);
+
+COMMENT ON TABLE review_helpfulness IS 'Tracks whether users found reviews helpful';
+
+-- ============================================
+-- TRIGGERS FOR UPDATED_AT TIMESTAMPS
+-- ============================================
+
+-- Function to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Apply trigger to tables with updated_at column
+CREATE TRIGGER update_marketplace_inquiries_updated_at BEFORE UPDATE ON marketplace_inquiries
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_quote_requests_updated_at BEFORE UPDATE ON quote_requests
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_consultations_updated_at BEFORE UPDATE ON consultations
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_fsp_portfolio_case_studies_updated_at BEFORE UPDATE ON fsp_portfolio_case_studies
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_fsp_certifications_updated_at BEFORE UPDATE ON fsp_certifications
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_reviews_updated_at BEFORE UPDATE ON reviews
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- SUMMARY
+-- ============================================
+
+-- This script creates the following table groups:
+-- 
+-- 1. MARKETPLACE INQUIRIES (3 tables)
+--    - marketplace_inquiries
+--    - inquiry_messages
+--    - inquiry_attachments
+--
+-- 2. QUOTE REQUESTS & QUOTES (4 tables)
+--    - quote_requests
+--    - quotes
+--    - quote_line_items
+--    - quote_request_attachments
+--
+-- 3. CONSULTATIONS (3 tables)
+--    - consultations
+--    - consultation_time_slots
+--    - consultation_attachments
+--
+-- 4. FSP PORTFOLIO & SHOWCASE (3 tables)
+--    - fsp_portfolio_case_studies
+--    - fsp_portfolio_media
+--    - fsp_certifications
+--
+-- 5. ENHANCED REVIEW & RATING SYSTEM (3 tables)
+--    - reviews
+--    - review_photos
+--    - review_helpfulness
+--
+-- Total: 16 new tables + 8 new ENUM types
+--
+-- All tables include:
+-- - Proper foreign key constraints
+-- - Appropriate indexes for performance
+-- - Comments for documentation
+-- - Audit fields (created_at, created_by, etc.)
+-- - Triggers for updated_at timestamps where applicable

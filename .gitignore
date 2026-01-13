@@ -1,0 +1,8 @@
+.venv
+/venv
+__pycache__/
+.env
+/Improvements_need
+.env.docker
+/AIhelp
+/uploads
