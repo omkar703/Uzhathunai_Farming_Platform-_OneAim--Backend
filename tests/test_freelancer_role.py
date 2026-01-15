@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.services.auth_service import AuthService
 from app.services.organization_service import OrganizationService
 from app.schemas.auth import UserRegister
-from app.schemas.organization import OrganizationCreate, FSPServiceCreate
+from app.schemas.organization import OrganizationCreate, FSPServiceListingCreate
 from app.models.enums import OrganizationType
 from app.models.rbac import Role
 from app.models.organization import OrgMemberRole

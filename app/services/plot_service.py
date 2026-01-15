@@ -73,11 +73,13 @@ class PlotService:
             
             # Validate plot is within farm boundary if farm has boundary
             if farm.boundary:
-                farm_boundary_geojson = self._wkt_to_geojson_polygon(str(farm.boundary))
-                self.spatial_service.validate_plot_within_farm(
-                    data.boundary.dict(),
-                    farm_boundary_geojson
-                )
+                # Use PostGIS to get GeoJSON directly instead of parsing WKT
+                farm_boundary_geojson = self._get_boundary_as_geojson(farm.id)
+                if farm_boundary_geojson:
+                    self.spatial_service.validate_plot_within_farm(
+                        data.boundary.dict(),
+                        farm_boundary_geojson
+                    )
             
             # Convert GeoJSON to WKT for PostGIS
             boundary_coords = data.boundary.coordinates[0]
@@ -310,11 +312,13 @@ class PlotService:
             
             # Validate plot is within farm boundary if farm has boundary
             if farm.boundary:
-                farm_boundary_geojson = self._wkt_to_geojson_polygon(str(farm.boundary))
-                self.spatial_service.validate_plot_within_farm(
-                    data.boundary.dict(),
-                    farm_boundary_geojson
-                )
+                # Use PostGIS to get GeoJSON directly instead of parsing WKT
+                farm_boundary_geojson = self._get_boundary_as_geojson(farm.id)
+                if farm_boundary_geojson:
+                    self.spatial_service.validate_plot_within_farm(
+                        data.boundary.dict(),
+                        farm_boundary_geojson
+                    )
             
             boundary_coords = data.boundary.coordinates[0]
             plot.boundary = self.spatial_service.create_polygon(boundary_coords)
@@ -644,8 +648,8 @@ class PlotService:
         # Convert PostGIS geography to GeoJSON
         boundary_geojson = None
         if plot.boundary:
-            # Parse WKT to GeoJSON
-            boundary_geojson = self._wkt_to_geojson_polygon(str(plot.boundary))
+            # Use PostGIS to get GeoJSON directly
+            boundary_geojson = self._get_plot_boundary_as_geojson(plot.id)
         
         return PlotResponse(
             id=str(plot.id),
@@ -662,6 +666,48 @@ class PlotService:
             created_by=str(plot.created_by) if plot.created_by else None,
             updated_by=str(plot.updated_by) if plot.updated_by else None
         )
+    
+    def _get_boundary_as_geojson(self, farm_id: UUID) -> Optional[Dict[str, Any]]:
+        """
+        Get farm boundary as GeoJSON using PostGIS ST_AsGeoJSON.
+        
+        Args:
+            farm_id: Farm ID
+            
+        Returns:
+            GeoJSON Polygon object or None
+        """
+        from sqlalchemy import text
+        
+        result = self.db.execute(
+            text("SELECT ST_AsGeoJSON(boundary) FROM farms WHERE id = :farm_id"),
+            {"farm_id": str(farm_id)}
+        ).fetchone()
+        
+        if result and result[0]:
+            return json.loads(result[0])
+        return None
+    
+    def _get_plot_boundary_as_geojson(self, plot_id: UUID) -> Optional[Dict[str, Any]]:
+        """
+        Get plot boundary as GeoJSON using PostGIS ST_AsGeoJSON.
+        
+        Args:
+            plot_id: Plot ID
+            
+        Returns:
+            GeoJSON Polygon object or None
+        """
+        from sqlalchemy import text
+        
+        result = self.db.execute(
+            text("SELECT ST_AsGeoJSON(boundary) FROM plots WHERE id = :plot_id"),
+            {"plot_id": str(plot_id)}
+        ).fetchone()
+        
+        if result and result[0]:
+            return json.loads(result[0])
+        return None
     
     def _wkt_to_geojson_polygon(self, wkt: str) -> Dict[str, Any]:
         """

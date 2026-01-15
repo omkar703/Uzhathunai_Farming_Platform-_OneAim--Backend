@@ -242,6 +242,35 @@ def accept_work_order(
 
 
 @router.post(
+    "/{work_order_id}/start",
+    response_model=WorkOrderResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Start work order",
+    description="Mark work order as active (changes status to ACTIVE)"
+)
+def start_work_order(
+    work_order_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Start work order.
+    
+    - Changes status to ACTIVE
+    - Indicates work has commenced
+    
+    Can be done by either farming or FSP organization.
+    """
+    service = WorkOrderService(db)
+    work_order = service.update_work_order_status(
+        work_order_id=work_order_id,
+        new_status=WorkOrderStatus.ACTIVE,
+        user_id=current_user.id
+    )
+    return work_order
+
+
+@router.post(
     "/{work_order_id}/complete",
     response_model=WorkOrderResponse,
     status_code=status.HTTP_200_OK,

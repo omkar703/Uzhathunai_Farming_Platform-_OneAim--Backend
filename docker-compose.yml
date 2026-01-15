@@ -1,4 +1,4 @@
-services: 
+services:
   web:
     build: .
     image: farm-backend
@@ -21,7 +21,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: farm_db
+      POSTGRES_DB: uzhathunai_db_v2
     ports:
       - "5432:5432"
     volumes:

@@ -13,6 +13,8 @@ from app.core.exceptions import NotFoundError, ValidationError, PermissionError
 from app.models.farm import (
     Farm, FarmSupervisor, FarmWaterSource, FarmSoilType, FarmIrrigationMode
 )
+from app.models.work_order import WorkOrder, WorkOrderScope
+from app.models.enums import WorkOrderStatus, WorkOrderScopeType
 from app.schemas.farm import FarmCreate, FarmUpdate, FarmResponse, FarmSupervisorResponse
 from app.services.spatial_service import SpatialService
 
@@ -192,17 +194,19 @@ class FarmService:
     ) -> FarmResponse:
         """
         Get farm by ID with ownership validation.
+        Also allows FSP access if valid Work Order exists.
         
         Args:
             farm_id: Farm ID
-            org_id: Organization ID
+            org_id: Organization ID (Farming OR FSP)
             
         Returns:
             Farm details
             
         Raises:
-            NotFoundError: If farm not found or not owned by organization
+            NotFoundError: If farm not found or not accessible
         """
+        # 1. Try finding farm directly owned by org
         farm = (
             self.db.query(Farm)
             .options(
@@ -216,7 +220,6 @@ class FarmService:
             .filter(
                 and_(
                     Farm.id == farm_id,
-                    Farm.organization_id == org_id,
                     Farm.is_active == True
                 )
             )
@@ -224,7 +227,54 @@ class FarmService:
         )
         
         if not farm:
-            raise NotFoundError(
+           raise NotFoundError(
+                message=f"Farm {farm_id} not found",
+                error_code="FARM_NOT_FOUND",
+                details={"farm_id": str(farm_id)}
+            )
+
+        # 2. Check Permission
+        has_access = False
+        
+        # A. Direct Ownership
+        if farm.organization_id == org_id:
+            has_access = True
+            
+        # B. FSP Work Order Access
+        if not has_access:
+            print(f"DEBUG: Checking FSP Access for Farm {farm_id}, Req Org {org_id}, Farm Org {farm.organization_id}")
+            # Check for active work orders where FSP Org = org_id AND Farming Org = farm.organization_id
+            work_order = self.db.query(WorkOrder).filter(
+                WorkOrder.fsp_organization_id == org_id,
+                WorkOrder.farming_organization_id == farm.organization_id,
+                WorkOrder.status.in_([WorkOrderStatus.ACTIVE, WorkOrderStatus.ACCEPTED])
+            ).first()
+            
+            print(f"DEBUG: Work Order found: {work_order}")
+            
+            if work_order:
+                # Check Scope (Optional: For now, strict farm scope or organization wide?)
+                # Requirement implies implicit access to farm if working on it. 
+                # Strict check: Does strict scope exist?
+                # Simplify scope check: specific farm scope OR organization wide
+                scope_items = self.db.query(WorkOrderScope).filter(
+                    WorkOrderScope.work_order_id == work_order.id
+                ).all()
+                
+                print(f"DEBUG: Scope items count: {len(scope_items)}")
+                
+                for item in scope_items:
+                    print(f"DEBUG: Checking item scope={item.scope}, scope_id={item.scope_id}")
+                    if item.scope == WorkOrderScopeType.ORGANIZATION:
+                        has_access = True
+                        break
+                    
+                    if item.scope == WorkOrderScopeType.FARM and str(item.scope_id) == str(farm_id):
+                        has_access = True
+                        break
+
+        if not has_access:
+             raise NotFoundError(
                 message=f"Farm {farm_id} not found",
                 error_code="FARM_NOT_FOUND",
                 details={"farm_id": str(farm_id)}
@@ -234,7 +284,8 @@ class FarmService:
             "Retrieved farm by ID",
             extra={
                 "farm_id": str(farm_id),
-                "org_id": str(org_id)
+                "org_id": str(org_id),
+                "is_fsp_access": farm.organization_id != org_id
             }
         )
         
