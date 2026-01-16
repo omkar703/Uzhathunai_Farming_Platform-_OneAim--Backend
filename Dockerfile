@@ -24,9 +24,11 @@ COPY . .
 # Expose app port
 EXPOSE 8000
 
-# Copy and enable entrypoint wrapper
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Make scripts executable
+RUN chmod +x /app/scripts/entrypoint.sh
 
 # Use wrapper as container entrypoint
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/app/scripts/entrypoint.sh"]
+
+# Default command
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,123 +1,188 @@
-from datetime import datetime
-from app.core.database import Base, engine, SessionLocal
-from app.models.user import User
-from app.models.work_order import WorkOrder
-from app.models.video_session import VideoSession
-# Add other models if needed for foreign keys, usually imports in the models/init help, 
-# but I should import them explicitly if I want to be safe.
-from app.models import organization, farm, crop, fsp_service
+import os
+import sys
+import time
+import logging
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
-def init_db():
-    print("Dropping existing tables...")
-    Base.metadata.drop_all(bind=engine)
-    print("Creating database tables...")
-    Base.metadata.create_all(bind=engine)
-    print("Tables created successfully.")
+# Add parent directory to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.core.database import SessionLocal, engine
+from app.core.security import get_password_hash
+from app.models.user import User
+from app.models.organization import OrgMemberRole
+from app.models.rbac import Role
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+SUPER_ADMIN_EMAIL = "superadmin@uzhathunai.com"
+SUPER_ADMIN_PASSWORD = "SuperSecure@Admin123"
+SUPER_ADMIN_FIRST_NAME = "System"
+SUPER_ADMIN_LAST_NAME = "Admin"
+SUPER_ADMIN_PHONE = "+919000000001"
+
+DB_SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "db_scripts")
+
+def wait_for_db():
+    logger.info("Waiting for database connection...")
+    retries = 30
+    while retries > 0:
+        try:
+            # Try to create a session to check connection
+            db = SessionLocal()
+            db.execute(text("SELECT 1"))
+            db.close()
+            logger.info("Database connection established.")
+            return
+        except Exception as e:
+            logger.warning(f"Database unavailable, retrying in 2 seconds... Error: {e}")
+            time.sleep(2)
+            retries -= 1
     
-    # Seed Initial Data
+    logger.error("Could not connect to database after many retries.")
+    sys.exit(1)
+
+def run_sql_file(db: Session, filename: str):
+    filepath = os.path.join(DB_SCRIPTS_DIR, filename)
+    if not os.path.exists(filepath):
+        logger.error(f"SQL file not found: {filepath}")
+        return
+
+    logger.info(f"Executing SQL script: {filename}")
+    with open(filepath, "r") as f:
+        sql_content = f.read()
+        # Simple split by ';' might be fragile for complex PL/PGSQL or strings containing semicolons.
+        # But for standard seed scripts it's usually okay if we execute as one block or split carefully.
+        # SQLAlchemy execute(text()) can handle multiple statements if supported by driver, 
+        # but often it's safer to read the whole file and let the DB execute it.
+        # However, psycopg2 usually prefers one statement per execute unless configured otherwise.
+        # Let's try executing the whole block first.
+        try:
+            db.execute(text(sql_content))
+            db.commit()
+            logger.info(f"Successfully executed {filename}")
+        except Exception as e:
+            logger.error(f"Failed to execute {filename}: {e}")
+            db.rollback()
+            # If it fails, we might want to exit or continue based on severity.
+            # DDL failure is critical. DML failure might be due to duplicates.
+            raise e
+
+def initialize_db():
+    wait_for_db()
+    
     db = SessionLocal()
     try:
-        # Check/Create Master Service
-        from app.models.fsp_service import MasterService
-        import uuid
-        
-        # Use a fixed UUID so we can give it to the user in docs
-        service_id = uuid.UUID("3fa85f64-5717-4562-b3fc-2c963f66afa6") 
-        
-        ms = db.query(MasterService).filter(MasterService.id == service_id).first()
-        if not ms:
-            print("Seeding Master Service...")
-            ms = MasterService(
-                id=service_id,
-                code="CONSULTATION",
-                name="General Consultation",
-                description="Expert advice on farming practices"
-            )
-            db.add(ms)
-            db.commit()
-            print(f"Seeded Master Service: {ms.name} (ID: {ms.id})")
+        # Check if users table exists to determine if we need to run DDL
+        # Using a safer check than execute("SELECT 1 FROM users") which throws if table missing
+        # We can check information_schema
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')"
+        ))
+        users_table_exists = result.scalar()
+
+        if not users_table_exists:
+            logger.info("Database seems empty. Initializing schema...")
+            run_sql_file(db, "001_uzhathunai_ddl.sql")
         else:
-            print(f"Master Service exists: {ms.id}")
+            logger.info("Schema (users) appears to exist.")
+
+        # Check 002: Refresh Tokens
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'refresh_tokens')"
+        ))
+        if not result.scalar():
+            logger.info("Missing refresh_tokens. Running 002_create_refresh_tokens_table.sql...")
+            run_sql_file(db, "002_create_refresh_tokens_table.sql")
             
-        # Check/Create Roles
-        from app.models.rbac import Role
-        from app.models.enums import UserRoleScope
-        
-        roles_data = [
-            {"code": "FREELANCER", "name": "Freelancer", "scope": UserRoleScope.SYSTEM, "description": "Independent user"},
-            {"code": "OWNER", "name": "Owner", "scope": UserRoleScope.ORGANIZATION, "description": "Organization Owner"},
-            {"code": "ADMIN", "name": "Admin", "scope": UserRoleScope.ORGANIZATION, "description": "Organization Admin"},
-            {"code": "MEMBER", "name": "Member", "scope": UserRoleScope.ORGANIZATION, "description": "Organization Member"},
-            {"code": "FSP_OWNER", "name": "FSP Owner", "scope": UserRoleScope.ORGANIZATION, "description": "FSP Organization Owner"},
-            {"code": "FSP_ADMIN", "name": "FSP Admin", "scope": UserRoleScope.ORGANIZATION, "description": "FSP Organization Admin"},
-            {"code": "FSP_AGENT", "name": "FSP Agent", "scope": UserRoleScope.ORGANIZATION, "description": "FSP Agent"},
-            {"code": "SUPER_ADMIN", "name": "Super Admin", "scope": UserRoleScope.SYSTEM, "description": "System-wide Super Admin"}
-        ]
-        
-        
-        print(f"Roles data count: {len(roles_data)}")
-        for r_data in roles_data:
-            print(f"Checking role: {r_data['code']}")
-            role = db.query(Role).filter(Role.code == r_data["code"]).first()
-            if not role:
-                print(f"Seeding Role: {r_data['name']}...")
-                new_role = Role(
-                    code=r_data["code"],
-                    name=r_data["name"],
-                    display_name=r_data["name"],
-                    scope=r_data["scope"],
-                    description=r_data["description"]
-                )
-                db.add(new_role)
-            else:
-                print(f"Role {r_data['code']} exists.")
-        db.commit()
-        print("Seeded Roles.")
+        # Check 003: Audit Changes (Check for sync_status column)
+        # Note: We assume if sync_status is missing, the whole script needs to run. 
+        # If partial application occurred, this might error on type creation, but manual intervention would be needed anyway.
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name='audits' AND column_name='sync_status')"
+        ))
+        if not result.scalar():
+            logger.info("Missing audit schema updates. Running 003_audit_module_changes.sql...")
+            run_sql_file(db, "003_audit_module_changes.sql")
 
-        # Create Super Admin User
-        from app.core.security import get_password_hash
-        from app.models.organization import OrgMemberRole
+        # Check 004: Organization Approval (Check for is_approved column)
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name='organizations' AND column_name='is_approved')"
+        ))
+        if not result.scalar():
+            logger.info("Missing is_approved column. Running 004_add_is_approved_to_orgs.sql...")
+            run_sql_file(db, "004_add_is_approved_to_orgs.sql")
 
-        admin_email = "superadmin@example.com"
-        admin_password = "Password123"
 
-        admin_user = db.query(User).filter(User.email == admin_email).first()
-        if not admin_user:
-            print(f"Seeding Super Admin User: {admin_email}...")
-            admin_user = User(
-                email=admin_email,
-                password_hash=get_password_hash(admin_password),
-                first_name="Super",
-                last_name="Admin",
-                is_active=True,
-                is_verified=True
-            )
-            db.add(admin_user)
-            db.flush()
-
-            # Assign SUPER_ADMIN role
-            super_role = db.query(Role).filter(Role.code == "SUPER_ADMIN").first()
-            if super_role:
-                print("Assigning SUPER_ADMIN role to user...")
-                member_role = OrgMemberRole(
-                    user_id=admin_user.id,
-                    role_id=super_role.id,
-                    is_primary=True,
-                    assigned_at=datetime.utcnow()
-                )
-                db.add(member_role)
-            
-            db.commit()
-            print("Super Admin user created successfully.")
+        # Check if Roles exist (Seed Data)
+        # Using count check
+        role_count = db.execute(text("SELECT count(*) FROM roles")).scalar()
+        if role_count == 0:
+            logger.info("Seeding initial data (DML)...")
+            run_sql_file(db, "a01_uzhathunai_dml.sql")
+            run_sql_file(db, "a02_uzhathunai_dml_RBAC.sql")
+            run_sql_file(db, "a03_uzhathunai_dml_input_items.sql")
         else:
-            print(f"Super Admin user {admin_email} already exists.")
-            
+            logger.info("Seed data appears to exist.")
+
+        # Create Super Admin
+        create_super_admin(db)
+        
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"Error seeding data: {e}")
+        logger.error(f"Initialization failed: {e}")
+        sys.exit(1)
     finally:
         db.close()
 
+def create_super_admin(db: Session):
+    user = db.query(User).filter(User.email == SUPER_ADMIN_EMAIL).first()
+    if user:
+        logger.info(f"Super Admin user ({SUPER_ADMIN_EMAIL}) already exists.")
+        return
+
+    logger.info(f"Creating Super Admin user: {SUPER_ADMIN_EMAIL}")
+    
+    try:
+        new_user = User(
+            email=SUPER_ADMIN_EMAIL,
+            password_hash=get_password_hash(SUPER_ADMIN_PASSWORD),
+            first_name=SUPER_ADMIN_FIRST_NAME,
+            last_name=SUPER_ADMIN_LAST_NAME,
+            phone=SUPER_ADMIN_PHONE,
+            is_active=True,
+            is_verified=True
+        )
+        db.add(new_user)
+        db.flush() # Get ID
+        
+        # Assign SUPER_ADMIN role
+        # Try to find the role ID from DB
+        role = db.query(Role).filter(Role.code == 'SUPER_ADMIN').first()
+        if not role:
+            logger.error("SUPER_ADMIN role not found! Access control will fail.")
+            # Depending on policy, we might create it here or fail. 
+            # Ideally seeding scripts should have created it.
+            return
+
+        # Assign role in org_member_roles with organization_id = NULL (System Scope)
+        member_role = OrgMemberRole(
+            user_id=new_user.id,
+            organization_id=None,
+            role_id=role.id,
+            is_primary=True
+        )
+        db.add(member_role)
+        
+        db.commit()
+        logger.info("Super Admin created successfully via OrgMemberRole (System Scope).")
+        
+    except Exception as e:
+        logger.error(f"Failed to create Super Admin: {e}")
+        db.rollback()
+        raise e
+
 if __name__ == "__main__":
-    init_db()
+    initialize_db()
