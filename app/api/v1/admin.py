@@ -45,8 +45,7 @@ async def approve_organization(
             }
         )
     
-    # 2. Approve
-    org.is_approved = True
+    # 2. Approve - set status to ACTIVE
     org.status = OrganizationStatus.ACTIVE
     db.commit()
     db.refresh(org)
@@ -59,8 +58,7 @@ async def approve_organization(
         "message": f"Organization {org.name} approved successfully",
         "data": {
             "organization_id": str(org.id),
-            "status": org.status.value,
-            "is_approved": True
+            "status": org.status.value
         }
     }
 
@@ -72,8 +70,7 @@ async def approve_organization(
     description="List all organizations with filtering and pagination. Only accessible by Super Admins."
 )
 async def list_organizations(
-    status: Optional[OrganizationStatus] = Query(None),
-    is_approved: Optional[bool] = Query(None),
+    org_status: Optional[OrganizationStatus] = Query(None, alias="status"),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_super_admin),
@@ -84,10 +81,8 @@ async def list_organizations(
     """
     query = db.query(Organization)
     
-    if status:
-        query = query.filter(Organization.status == status)
-    if is_approved is not None:
-        query = query.filter(Organization.is_approved == is_approved)
+    if org_status:
+        query = query.filter(Organization.status == org_status)
         
     total = query.count()
     offset = (page - 1) * limit
@@ -103,7 +98,6 @@ async def list_organizations(
                     "name": o.name,
                     "type": o.organization_type.value,
                     "status": o.status.value,
-                    "is_approved": o.is_approved,
                     "created_at": o.created_at.isoformat() if o.created_at else None
                 } for o in orgs
             ],

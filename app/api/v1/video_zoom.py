@@ -97,12 +97,13 @@ async def schedule_meeting(
     # 2. Authorization & Validation
     start_time = request.start_time or datetime.utcnow()
     
-    # Check if organizations are approved to prevent 403s later in Zoom
+    # Check if organizations are active to prevent 403s later in Zoom
     from app.models.organization import Organization
+    from app.models.enums import OrganizationStatus
     fsp_org = db.query(Organization).filter(Organization.id == work_order.fsp_organization_id).first()
     farm_org = db.query(Organization).filter(Organization.id == work_order.farming_organization_id).first()
     
-    if not (fsp_org and fsp_org.is_approved) or not (farm_org and farm_org.is_approved):
+    if not (fsp_org and fsp_org.status == OrganizationStatus.ACTIVE) or not (farm_org and farm_org.status == OrganizationStatus.ACTIVE):
          raise HTTPException(
              status_code=403, 
              detail={

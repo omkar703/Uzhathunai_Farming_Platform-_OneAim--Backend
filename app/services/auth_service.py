@@ -16,6 +16,7 @@ from app.core.security import (
     get_password_hash,
     verify_password,
     create_access_token,
+    create_access_token_with_context,
     create_refresh_token,
     verify_refresh_token,
     get_token_hash
@@ -196,8 +197,49 @@ class AuthService:
         user.last_login = datetime.now(timezone.utc)
         self.db.commit()
         
-        # Create tokens
-        access_token = create_access_token(data={"sub": str(user.id)})
+        # Determine organization for token context
+        from app.models.organization import OrgMember, MemberStatus
+        
+        organization_id_for_token = None
+        
+        # Get user's active organization memberships
+        active_memberships = self.db.query(OrgMember).filter(
+            OrgMember.user_id == user.id,
+            OrgMember.status == MemberStatus.ACTIVE
+        ).all()
+        
+        if login_data.organization_id:
+            # User specified an organization - verify they have access
+            specified_membership = next(
+                (m for m in active_memberships if m.organization_id == login_data.organization_id),
+                None
+            )
+            if not specified_membership:
+                raise AuthenticationError(
+                    message="You do not have access to the specified organization",
+                    error_code="INVALID_ORGANIZATION"
+                )
+            organization_id_for_token = login_data.organization_id
+        elif len(active_memberships) == 1:
+            # Auto-select if user has only one organization
+            organization_id_for_token = active_memberships[0].organization_id
+        elif len(active_memberships) > 1:
+            # User has multiple organizations but didn't specify - use first one
+            # Frontend should handle organization selection
+            organization_id_for_token = active_memberships[0].organization_id
+        # else: user is a freelancer (no organizations), organization_id_for_token remains None
+        
+        # Create tokens with organization context
+        if organization_id_for_token:
+            access_token = create_access_token_with_context(
+                user_id=str(user.id),
+                db=self.db,
+                organization_id=str(organization_id_for_token)
+            )
+        else:
+            # Freelancer - no organization context
+            access_token = create_access_token(data={"sub": str(user.id)})
+        
         refresh_token = create_refresh_token(
             user_id=str(user.id),
             db=self.db,

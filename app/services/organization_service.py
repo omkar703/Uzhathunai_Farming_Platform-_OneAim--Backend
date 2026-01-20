@@ -89,10 +89,8 @@ class OrganizationService:
             self._validate_organization_name(data.name, user_id)
             
             # Determine initial status
-            if data.organization_type == OrganizationType.FSP and data.services:
-                status = OrganizationStatus.NOT_STARTED  # Pending approval
-            else:
-                status = OrganizationStatus.ACTIVE
+            # All new organizations are PENDING (NOT_STARTED) by default
+            status = OrganizationStatus.NOT_STARTED
             
             # Create organization
             org = Organization(
@@ -166,6 +164,18 @@ class OrganizationService:
                 extra={"user_id": str(user_id), "error": str(e)},
                 exc_info=True
             )
+            # Check for unique constraint violation manually if not caught by validation
+            if "duplicate key value violates unique constraint" in str(e):
+                 self.metrics.increment('organization.created', {
+                    'type': data.organization_type.value,
+                    'status': 'conflict'
+                })
+                 raise ConflictError(
+                    message=f"Organization with name '{data.name}' already exists",
+                    error_code="ORG_NAME_EXISTS",
+                    details={"name": data.name}
+                )
+
             self.metrics.increment('organization.created', {
                 'type': data.organization_type.value,
                 'status': 'failure'
@@ -365,9 +375,9 @@ class OrganizationService:
         Raises:
             ConflictError: If name already exists for user
         """
-        existing = self.db.query(Organization).join(OrgMember).filter(
-            Organization.name == name,
-            OrgMember.user_id == user_id
+        # Check global uniqueness of organization name
+        existing = self.db.query(Organization).filter(
+            Organization.name == name
         ).first()
         
         if existing:

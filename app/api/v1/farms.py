@@ -43,23 +43,12 @@ def create_farm(
     """
     service = FarmService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.create_farm(data, membership.organization_id, current_user.id)
+    return service.create_farm(data, org_id, current_user.id)
 
 
 @router.get("/", response_model=dict)
@@ -79,23 +68,32 @@ def get_farms(
     """
     service = FarmService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    # Get organization ID from JWT token context
+    from uuid import UUID
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    if not hasattr(current_user, 'current_organization_id') or not current_user.current_organization_id:
+        # Fallback to first active membership (backward compatibility)
+        from app.models.organization import OrgMember
+        from app.models.enums import MemberStatus
+        
+        membership = db.query(OrgMember).filter(
+            OrgMember.user_id == current_user.id,
+            OrgMember.status == MemberStatus.ACTIVE
+        ).first()
+        
+        if not membership:
+            from app.core.exceptions import PermissionError
+            raise PermissionError(
+                message="User is not a member of any organization",
+                error_code="NO_ORGANIZATION_MEMBERSHIP"
+            )
+        
+        org_id = org_id
+    else:
+        # Use organization from JWT token
+        org_id = UUID(current_user.current_organization_id)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    farms, total = service.get_farms(membership.organization_id, page, limit)
+    farms, total = service.get_farms(org_id, page, limit)
     
     return {
         "items": farms,
@@ -121,23 +119,12 @@ def get_farm(
     """
     service = FarmService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.get_farm_by_id(farm_id, membership.organization_id)
+    return service.get_farm_by_id(farm_id, org_id)
 
 
 @router.put("/{farm_id}", response_model=FarmResponse)
@@ -156,23 +143,12 @@ def update_farm(
     """
     service = FarmService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.update_farm(farm_id, data, membership.organization_id, current_user.id)
+    return service.update_farm(farm_id, data, org_id, current_user.id)
 
 
 @router.delete("/{farm_id}", status_code=204)
@@ -190,23 +166,12 @@ def delete_farm(
     """
     service = FarmService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.delete_farm(farm_id, membership.organization_id, current_user.id)
+    service.delete_farm(farm_id, org_id, current_user.id)
     return None
 
 
@@ -231,23 +196,12 @@ def assign_supervisor(
     """
     service = FarmService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.assign_supervisor(farm_id, supervisor_id, membership.organization_id, current_user.id)
+    service.assign_supervisor(farm_id, supervisor_id, org_id, current_user.id)
     return {"message": "Supervisor assigned successfully"}
 
 
@@ -266,23 +220,12 @@ def remove_supervisor(
     """
     service = FarmService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.remove_supervisor(farm_id, supervisor_id, membership.organization_id)
+    service.remove_supervisor(farm_id, supervisor_id, org_id)
     return None
 
 
@@ -305,23 +248,12 @@ def add_water_source(
     """
     service = FarmService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.add_water_source(farm_id, data.water_source_id, membership.organization_id)
+    service.add_water_source(farm_id, data.water_source_id, org_id)
     return {"message": "Water source added successfully"}
 
 
@@ -340,23 +272,12 @@ def add_soil_type(
     """
     service = FarmService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.add_soil_type(farm_id, data.soil_type_id, membership.organization_id)
+    service.add_soil_type(farm_id, data.soil_type_id, org_id)
     return {"message": "Soil type added successfully"}
 
 
@@ -375,21 +296,10 @@ def add_irrigation_mode(
     """
     service = FarmService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.add_irrigation_mode(farm_id, data.irrigation_mode_id, membership.organization_id)
+    service.add_irrigation_mode(farm_id, data.irrigation_mode_id, org_id)
     return {"message": "Irrigation mode added successfully"}

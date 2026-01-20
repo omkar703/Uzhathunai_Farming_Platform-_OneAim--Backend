@@ -93,6 +93,7 @@ class OrganizationResponse(BaseModel):
     logo_url: Optional[str]
     organization_type: OrganizationType
     status: OrganizationStatus
+    is_approved: bool
     registration_number: Optional[str]
     address: Optional[str]
     district: Optional[str]
@@ -121,3 +122,13 @@ class OrganizationResponse(BaseModel):
             datetime: lambda v: v.isoformat() if v else None,
             date: lambda v: v.isoformat() if v else None
         }
+
+
+class OrganizationListResponse(BaseModel):
+    """Schema for paginated organization list response."""
+    items: List[OrganizationResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+

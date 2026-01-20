@@ -40,23 +40,12 @@ def create_crop(
     """
     service = CropService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.create_crop(data.plot_id, membership.organization_id, data, current_user.id)
+    return service.create_crop(data.plot_id, org_id, data, current_user.id)
 
 
 @router.get("/", response_model=dict)
@@ -80,21 +69,10 @@ def get_crops(
     """
     service = CropService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
-    
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
     # Build filters
     filters = {}
@@ -103,7 +81,7 @@ def get_crops(
     if lifecycle:
         filters['lifecycle'] = lifecycle
     
-    crops, total = service.get_crops(membership.organization_id, filters, page, limit)
+    crops, total = service.get_crops(org_id, filters, page, limit)
     
     return {
         "items": crops,
@@ -129,23 +107,12 @@ def get_crop(
     """
     service = CropService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.get_crop_by_id(crop_id, membership.organization_id)
+    return service.get_crop_by_id(crop_id, org_id)
 
 
 @router.put("/{crop_id}", response_model=CropResponse)
@@ -164,23 +131,12 @@ def update_crop(
     """
     service = CropService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.update_crop(crop_id, membership.organization_id, data, current_user.id)
+    return service.update_crop(crop_id, org_id, data, current_user.id)
 
 
 @router.delete("/{crop_id}", status_code=204)
@@ -198,23 +154,12 @@ def delete_crop(
     """
     service = CropService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.delete_crop(crop_id, membership.organization_id, current_user.id)
+    service.delete_crop(crop_id, org_id, current_user.id)
     return None
 
 
@@ -248,23 +193,12 @@ def update_crop_lifecycle(
     """
     service = CropService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.update_lifecycle(crop_id, membership.organization_id, data.new_lifecycle, current_user.id)
+    return service.update_lifecycle(crop_id, org_id, data.new_lifecycle, current_user.id)
 
 
 @router.get("/plots/{plot_id}/crop-history", response_model=List[CropResponse])
@@ -282,20 +216,9 @@ def get_crop_history(
     """
     service = CropService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.get_crop_history(plot_id, membership.organization_id)
+    return service.get_crop_history(plot_id, org_id)

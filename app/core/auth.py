@@ -29,7 +29,7 @@ def get_current_user(
         db: Database session
     
     Returns:
-        User object
+        User object with current_organization_id attached
     
     Raises:
         HTTPException: If token is invalid or user not found
@@ -60,6 +60,15 @@ def get_current_user(
             message="User not found",
             error_code="USER_NOT_FOUND"
         )
+    
+    # Extract organization context from token and attach to user object
+    org_context = payload.get("org")
+    if org_context and org_context.get("id"):
+        # Attach organization ID to user object for easy access in endpoints
+        user.current_organization_id = org_context.get("id")
+    else:
+        # No organization context (freelancer or old token)
+        user.current_organization_id = None
     
     return user
 
@@ -98,24 +107,25 @@ def get_current_active_user(
     # Lazy load or query memberships
     # Since we injected DB session, we can query.
     from app.models.organization import OrgMember, Organization, MemberStatus
+    from app.models.enums import OrganizationStatus
     
-    # Check if user has ANY active membership in an APPROVED organization
+    # Check if user has ANY active membership in an ACTIVE organization
     stmt = (
         db.query(OrgMember)
         .join(Organization)
         .filter(OrgMember.user_id == current_user.id)
         .filter(OrgMember.status == MemberStatus.ACTIVE)
-        .filter(Organization.is_approved == True)
+        .filter(Organization.status == OrganizationStatus.ACTIVE)
     )
     approved_membership = stmt.first()
     
-    # Let's see if they are in an Unapproved Org
+    # Let's see if they are in a non-active Org
     stmt_unapproved = (
         db.query(OrgMember)
         .join(Organization)
         .filter(OrgMember.user_id == current_user.id)
         .filter(OrgMember.status == MemberStatus.ACTIVE)
-        .filter(Organization.is_approved == False)
+        .filter(Organization.status.in_([OrganizationStatus.NOT_STARTED, OrganizationStatus.IN_PROGRESS, OrganizationStatus.INACTIVE, OrganizationStatus.SUSPENDED]))
     )
     unapproved_membership = stmt_unapproved.first()
     

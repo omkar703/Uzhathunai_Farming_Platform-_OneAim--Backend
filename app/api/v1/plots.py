@@ -43,23 +43,12 @@ def create_plot(
     """
     service = PlotService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.create_plot(farm_id, data, membership.organization_id, current_user.id)
+    return service.create_plot(farm_id, data, org_id, current_user.id)
 
 
 @router.get("/farms/{farm_id}/plots", response_model=dict)
@@ -76,28 +65,15 @@ def get_plots_by_farm(
     - **farm_id**: UUID of the farm
     - **page**: Page number (default: 1)
     - **limit**: Items per page (default: 20, max: 100)
-    
-    Returns paginated list of plots with metadata.
     """
+    from app.core.organization_context import get_organization_id
+    
     service = PlotService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
-    
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    plots, total = service.get_plots_by_farm(farm_id, membership.organization_id, page, limit)
+    plots, total = service.get_plots_by_farm(farm_id, org_id, page, limit)
     
     return {
         "items": plots,
@@ -123,23 +99,12 @@ def get_plot(
     """
     service = PlotService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.get_plot_by_id(plot_id, membership.organization_id)
+    return service.get_plot_by_id(plot_id, org_id)
 
 
 @router.put("/{plot_id}", response_model=PlotResponse)
@@ -158,23 +123,12 @@ def update_plot(
     """
     service = PlotService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.update_plot(plot_id, membership.organization_id, data, current_user.id)
+    return service.update_plot(plot_id, org_id, data, current_user.id)
 
 
 @router.delete("/{plot_id}", status_code=204)
@@ -192,23 +146,12 @@ def delete_plot(
     """
     service = PlotService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.delete_plot(plot_id, membership.organization_id, current_user.id)
+    service.delete_plot(plot_id, org_id, current_user.id)
     return None
 
 
@@ -231,23 +174,12 @@ def add_water_source(
     """
     service = PlotService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.add_water_source(plot_id, data.water_source_id, membership.organization_id)
+    service.add_water_source(plot_id, data.water_source_id, org_id)
     return {"message": "Water source added successfully"}
 
 
@@ -266,23 +198,12 @@ def add_soil_type(
     """
     service = PlotService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.add_soil_type(plot_id, data.soil_type_id, membership.organization_id)
+    service.add_soil_type(plot_id, data.soil_type_id, org_id)
     return {"message": "Soil type added successfully"}
 
 
@@ -301,21 +222,10 @@ def add_irrigation_mode(
     """
     service = PlotService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.add_irrigation_mode(plot_id, data.irrigation_mode_id, membership.organization_id)
+    service.add_irrigation_mode(plot_id, data.irrigation_mode_id, org_id)
     return {"message": "Irrigation mode added successfully"}

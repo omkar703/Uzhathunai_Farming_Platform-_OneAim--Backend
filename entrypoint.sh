@@ -11,7 +11,7 @@ echo "PostgreSQL is ready"
 
 echo "Running database SQL scripts..."
 
-psql "postgresql://postgres:postgres@db:5432/farm_db" <<'EOF'
+psql "postgresql://postgres:postgres@db:5432/uzhathunai_db_v2" <<'EOF'
 \i db_scripts/001_uzhathunai_ddl.sql
 \i db_scripts/002_create_refresh_tokens_table.sql
 \i db_scripts/003_audit_module_changes.sql

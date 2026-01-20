@@ -13,6 +13,7 @@ from app.core.cache import cache_service
 from app.models.crop import Crop
 from app.models.plot import Plot
 from app.models.farm import Farm
+from app.models.crop_data import CropVariety, CropVarietyTranslation
 from app.models.enums import CropLifecycle
 from app.schemas.crop import CropCreate, CropUpdate, CropResponse
 
@@ -86,13 +87,18 @@ class CropService:
                 details={"plot_id": str(plot_id)}
             )
         
+        # Resolve variety_name to crop_variety_id if provided
+        crop_variety_id = data.crop_variety_id
+        if data.variety_name and not crop_variety_id:
+            crop_variety_id = self._find_variety_by_name(data.variety_name)
+        
         # Create crop
         crop = Crop(
             plot_id=plot_id,
             name=data.name,
             description=data.description,
             crop_type_id=data.crop_type_id,
-            crop_variety_id=data.crop_variety_id,
+            crop_variety_id=crop_variety_id,
             area=data.area,
             area_unit_id=data.area_unit_id,
             plant_count=data.plant_count,
@@ -551,6 +557,49 @@ class CropService:
         )
         
         return [self._to_response(crop) for crop in crops]
+    
+    def _find_variety_by_name(self, variety_name: str) -> UUID:
+        """
+        Find crop variety by name (case-insensitive search in translations).
+        
+        Args:
+            variety_name: Variety name to search for
+            
+        Returns:
+            UUID of the found variety
+            
+        Raises:
+            NotFoundError: If variety not found
+        """
+        # Search in crop_variety_translations for matching name (case-insensitive)
+        translation = (
+            self.db.query(CropVarietyTranslation)
+            .join(CropVariety)
+            .filter(
+                and_(
+                    func.lower(CropVarietyTranslation.name) == func.lower(variety_name),
+                    CropVariety.is_active == True
+                )
+            )
+            .first()
+        )
+        
+        if not translation:
+            raise NotFoundError(
+                message=f"Crop variety '{variety_name}' not found",
+                error_code="VARIETY_NOT_FOUND",
+                details={"variety_name": variety_name}
+            )
+        
+        logger.info(
+            "Found variety by name",
+            extra={
+                "variety_name": variety_name,
+                "variety_id": str(translation.crop_variety_id)
+            }
+        )
+        
+        return translation.crop_variety_id
     
     def _invalidate_crop_cache(self, org_id: UUID, plot_id: Optional[UUID] = None) -> None:
         """

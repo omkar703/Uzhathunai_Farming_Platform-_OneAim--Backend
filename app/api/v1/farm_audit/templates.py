@@ -54,7 +54,7 @@ def get_user_organization_id(user: User, db: Session) -> UUID:
         # TODO: Add proper system user check
         return None
     
-    return membership.organization_id
+    return org_id
 
 
 def has_consultancy_service(user: User, db: Session) -> bool:
@@ -91,7 +91,7 @@ def has_consultancy_service(user: User, db: Session) -> bool:
         return False
     
     subscription = db.query(Subscription).filter(
-        Subscription.organization_id == membership.organization_id,
+        Subscription.organization_id == org_id,
         Subscription.master_service_id == consultancy_service.id,
         Subscription.status == SubscriptionStatus.ACTIVE
     ).first()

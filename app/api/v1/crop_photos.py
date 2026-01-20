@@ -39,21 +39,10 @@ async def upload_crop_photo(
     """
     service = CropPhotoService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
-    
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
     # Parse photo_date if provided
     parsed_photo_date = None
@@ -77,7 +66,7 @@ async def upload_crop_photo(
     
     return await service.upload_photo(
         crop_id,
-        membership.organization_id,
+        org_id,
         file,
         upload_data,
         current_user.id
@@ -99,23 +88,12 @@ def get_crop_photos(
     """
     service = CropPhotoService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.get_photos_by_crop(crop_id, membership.organization_id)
+    return service.get_photos_by_crop(crop_id, org_id)
 
 
 @router.get("/{photo_id}", response_model=CropPhotoResponse)
@@ -133,23 +111,12 @@ def get_crop_photo(
     """
     service = CropPhotoService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.get_photo_by_id(photo_id, membership.organization_id)
+    return service.get_photo_by_id(photo_id, org_id)
 
 
 @router.delete("/{photo_id}", status_code=204)
@@ -167,21 +134,10 @@ def delete_crop_photo(
     """
     service = CropPhotoService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.delete_photo(photo_id, membership.organization_id, current_user.id)
+    service.delete_photo(photo_id, org_id, current_user.id)
     return None

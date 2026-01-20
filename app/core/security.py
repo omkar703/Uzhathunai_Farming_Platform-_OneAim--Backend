@@ -261,10 +261,11 @@ def create_access_token_with_context(
             organization_context = {
                 "id": str(organization.id),
                 "name": organization.name,
-                "type": organization.type.value,
-                "status": organization.status.value
+                "type": organization.organization_type.value if organization.organization_type else None,
+                "status": organization.status.value if organization.status else None
             }
-            subscription_plan = organization.subscription_plan.value if organization.subscription_plan else None
+            # subscription_plan is a relationship to SubscriptionPlan model, get its name
+            subscription_plan = organization.subscription_plan.name if organization.subscription_plan else None
             
             # Get user's roles in this organization
             membership = db.query(OrgMember).filter(

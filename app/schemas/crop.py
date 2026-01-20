@@ -18,6 +18,7 @@ class CropCreate(BaseModel):
     description: Optional[str] = None
     crop_type_id: Optional[UUID] = None
     crop_variety_id: Optional[UUID] = None
+    variety_name: Optional[str] = Field(None, description="Variety name (alternative to crop_variety_id)")
     area: Optional[Decimal] = Field(None, ge=0)
     area_unit_id: Optional[UUID] = None
     plant_count: Optional[int] = Field(None, ge=0)
@@ -29,6 +30,13 @@ class CropCreate(BaseModel):
         if not v.strip():
             raise ValueError('Name cannot be empty')
         return v.strip()
+    
+    @validator('variety_name')
+    def validate_variety_name(cls, v):
+        """Validate variety_name is not empty if provided."""
+        if v is not None and not v.strip():
+            raise ValueError('Variety name cannot be empty')
+        return v.strip() if v else v
 
 
 class CropUpdate(BaseModel):

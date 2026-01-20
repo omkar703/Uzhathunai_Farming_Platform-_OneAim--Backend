@@ -2,6 +2,7 @@
 Authentication schemas for Uzhathunai v2.0.
 """
 from typing import Optional
+from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field, validator
 import re
 
@@ -14,10 +15,11 @@ class UserRegister(UserCreate):
 
 
 class UserLogin(BaseModel):
-    """Schema for user login."""
-    email: EmailStr
-    password: str
-    remember_me: bool = False
+    """User login schema."""
+    email: EmailStr = Field(..., description="User email address")
+    password: str = Field(..., min_length=8, description="User password")
+    remember_me: bool = Field(default=False, description="Remember login session")
+    organization_id: Optional[UUID] = Field(None, description="Organization to login to (optional, auto-selected if only one)")
 
 
 class TokenRefresh(BaseModel):

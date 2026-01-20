@@ -49,7 +49,7 @@ def get_user_organization_id(user: User, db: Session) -> UUID:
             error_code="NO_ORGANIZATION_MEMBERSHIP"
         )
     
-    return membership.organization_id
+    return org_id
 
 
 # ============================================================================

@@ -78,6 +78,7 @@ class FarmCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = Field(None, max_length=100)
     district: Optional[str] = Field(None, max_length=100)
     state: Optional[str] = Field(None, max_length=100)
     pincode: Optional[str] = Field(None, max_length=20)
@@ -104,6 +105,7 @@ class FarmUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = Field(None, max_length=100)
     district: Optional[str] = Field(None, max_length=100)
     state: Optional[str] = Field(None, max_length=100)
     pincode: Optional[str] = Field(None, max_length=20)
@@ -268,6 +270,7 @@ class FarmResponse(BaseModel):
     name: str
     description: Optional[str]
     address: Optional[str]
+    city: Optional[str]
     district: Optional[str]
     state: Optional[str]
     pincode: Optional[str]

@@ -44,23 +44,12 @@ def create_crop_yield(
     """
     service = CropYieldService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.create_yield(crop_id, membership.organization_id, data, current_user.id)
+    return service.create_yield(crop_id, org_id, data, current_user.id)
 
 
 @router.get("/crops/{crop_id}/yields", response_model=List[CropYieldResponse])
@@ -78,23 +67,12 @@ def get_crop_yields(
     """
     service = CropYieldService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.get_yields_by_crop(crop_id, membership.organization_id)
+    return service.get_yields_by_crop(crop_id, org_id)
 
 
 @router.get("/{yield_id}", response_model=CropYieldResponse)
@@ -112,23 +90,12 @@ def get_crop_yield(
     """
     service = CropYieldService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.get_yield_by_id(yield_id, membership.organization_id)
+    return service.get_yield_by_id(yield_id, org_id)
 
 
 @router.put("/{yield_id}", response_model=CropYieldResponse)
@@ -147,23 +114,12 @@ def update_crop_yield(
     """
     service = CropYieldService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.update_yield(yield_id, membership.organization_id, data, current_user.id)
+    return service.update_yield(yield_id, org_id, data, current_user.id)
 
 
 @router.delete("/{yield_id}", status_code=204)
@@ -181,23 +137,12 @@ def delete_crop_yield(
     """
     service = CropYieldService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.delete_yield(yield_id, membership.organization_id, current_user.id)
+    service.delete_yield(yield_id, org_id, current_user.id)
     return None
 
 
@@ -222,23 +167,12 @@ def associate_photo_with_yield(
     """
     service = CropYieldService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    service.associate_photo(yield_id, photo_id, membership.organization_id)
+    service.associate_photo(yield_id, photo_id, org_id)
     return {"message": "Photo associated with yield successfully"}
 
 
@@ -268,20 +202,9 @@ def get_yield_comparison(
     """
     service = CropYieldService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.compare_planned_vs_actual(crop_id, membership.organization_id)
+    return service.compare_planned_vs_actual(crop_id, org_id)

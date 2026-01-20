@@ -76,6 +76,7 @@ class FarmService:
             name=data.name,
             description=data.description,
             address=data.address,
+            city=data.city,
             district=data.district,
             state=data.state,
             pincode=data.pincode,
@@ -336,6 +337,8 @@ class FarmService:
             farm.description = data.description
         if data.address is not None:
             farm.address = data.address
+        if data.city is not None:
+            farm.city = data.city
         if data.district is not None:
             farm.district = data.district
         if data.state is not None:
@@ -996,6 +999,7 @@ class FarmService:
             name=farm.name,
             description=farm.description,
             address=farm.address,
+            city=farm.city,
             district=farm.district,
             state=farm.state,
             pincode=farm.pincode,

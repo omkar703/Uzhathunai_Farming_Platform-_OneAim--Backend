@@ -262,3 +262,66 @@ def change_password(
         "message": "Password changed successfully. Please login again on all devices.",
         "data": {"message": "Password changed successfully. Please login again on all devices."}
     }
+
+
+@router.post(
+    "/switch-organization",
+    response_model=BaseResponse[TokenResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Switch organization context",
+    description="Switch to a different organization and get new access token with updated context"
+)
+def switch_organization(
+    organization_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Switch organization context and get new access token.
+    
+    User must be an active member of the requested organization.
+    """
+    from uuid import UUID
+    from app.models.organization import OrgMember, MemberStatus
+    from app.core.security import create_access_token_with_context
+    from app.core.exceptions import PermissionError
+    
+    # Convert string to UUID
+    try:
+        org_uuid = UUID(organization_id)
+    except ValueError:
+        raise PermissionError(
+            message="Invalid organization ID format",
+            error_code="INVALID_ORGANIZATION_ID"
+        )
+    
+    # Verify user has active membership in the requested organization
+    membership = db.query(OrgMember).filter(
+        OrgMember.user_id == current_user.id,
+        OrgMember.organization_id == org_uuid,
+        OrgMember.status == MemberStatus.ACTIVE
+    ).first()
+    
+    if not membership:
+        raise PermissionError(
+            message="You do not have access to this organization",
+            error_code="NO_ORGANIZATION_ACCESS"
+        )
+    
+    # Generate new access token with new organization context
+    access_token = create_access_token_with_context(
+        user_id=str(current_user.id),
+        db=db,
+        organization_id=organization_id
+    )
+    
+    return {
+        "success": True,
+        "message": "Organization switched successfully",
+        "data": {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        }
+    }
+

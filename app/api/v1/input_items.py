@@ -61,7 +61,7 @@ def get_input_item_categories(
             error_code="NO_ORGANIZATION_MEMBERSHIP"
         )
     
-    return service.get_categories(membership.organization_id, language, include_system)
+    return service.get_categories(org_id, language, include_system)
 
 
 @router.post("/categories", response_model=InputItemCategoryResponse, status_code=201)
@@ -78,25 +78,14 @@ def create_input_item_category(
     """
     service = InputItemService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
-    
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
     # TODO: Add RBAC check for admin role
     
-    return service.create_org_category(membership.organization_id, data, current_user.id)
+    return service.create_org_category(org_id, data, current_user.id)
 
 
 @router.put("/categories/{category_id}", response_model=InputItemCategoryResponse)
@@ -114,25 +103,14 @@ def update_input_item_category(
     """
     service = InputItemService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
-    
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
     # TODO: Add RBAC check for admin role
     
-    return service.update_org_category(category_id, membership.organization_id, data, current_user.id)
+    return service.update_org_category(category_id, org_id, data, current_user.id)
 
 
 @router.delete("/categories/{category_id}", status_code=204)
@@ -149,25 +127,14 @@ def delete_input_item_category(
     """
     service = InputItemService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
-    
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
     # TODO: Add RBAC check for admin role
     
-    service.delete_org_category(category_id, membership.organization_id, current_user.id)
+    service.delete_org_category(category_id, org_id, current_user.id)
     return None
 
 
@@ -194,23 +161,12 @@ def get_input_items(
     """
     service = InputItemService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
-    
-    return service.get_items(membership.organization_id, category_id, language, include_system)
+    return service.get_items(org_id, category_id, language, include_system)
 
 
 @router.post("/", response_model=InputItemResponse, status_code=201)
@@ -227,25 +183,14 @@ def create_input_item(
     """
     service = InputItemService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
-    
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
     # TODO: Add RBAC check for admin role
     
-    return service.create_org_item(data, membership.organization_id, current_user.id)
+    return service.create_org_item(data, org_id, current_user.id)
 
 
 @router.put("/{item_id}", response_model=InputItemResponse)
@@ -263,25 +208,14 @@ def update_input_item(
     """
     service = InputItemService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
-    
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
     # TODO: Add RBAC check for admin role
     
-    return service.update_org_item(item_id, membership.organization_id, data, current_user.id)
+    return service.update_org_item(item_id, org_id, data, current_user.id)
 
 
 @router.delete("/{item_id}", status_code=204)
@@ -298,23 +232,12 @@ def delete_input_item(
     """
     service = InputItemService(db)
     
-    # Get user's current organization
-    from app.models.organization import OrgMember
-    from app.models.enums import MemberStatus
+    from app.core.organization_context import get_organization_id
     
-    membership = db.query(OrgMember).filter(
-        OrgMember.user_id == current_user.id,
-        OrgMember.status == MemberStatus.ACTIVE
-    ).first()
-    
-    if not membership:
-        from app.core.exceptions import PermissionError
-        raise PermissionError(
-            message="User is not a member of any organization",
-            error_code="NO_ORGANIZATION_MEMBERSHIP"
-        )
+    # Get organization ID from JWT token
+    org_id = get_organization_id(current_user, db)
     
     # TODO: Add RBAC check for admin role
     
-    service.delete_org_item(item_id, membership.organization_id, current_user.id)
+    service.delete_org_item(item_id, org_id, current_user.id)
     return None

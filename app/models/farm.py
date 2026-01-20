@@ -27,6 +27,7 @@ class Farm(Base):
     name = Column(String(200), nullable=False)
     description = Column(Text)
     address = Column(Text)
+    city = Column(String(100))
     district = Column(String(100))
     state = Column(String(100))
     pincode = Column(String(20))

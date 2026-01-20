@@ -8,13 +8,14 @@ from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.auth import get_current_active_user
+from app.core.auth import get_current_active_user, get_current_user
 from app.models.user import User
 from app.models.enums import OrganizationType
 from app.schemas.organization import (
     OrganizationCreate,
     OrganizationUpdate,
-    OrganizationResponse
+    OrganizationResponse,
+    OrganizationListResponse
 )
 from app.services.organization_service import OrganizationService
 
@@ -53,6 +54,7 @@ def create_organization(
 @router.get(
     "",
     status_code=status.HTTP_200_OK,
+    response_model=OrganizationListResponse,
     summary="Get user organizations",
     description="Get all organizations user belongs to"
 )
@@ -60,7 +62,7 @@ def get_user_organizations(
     org_type: Optional[OrganizationType] = Query(None, description="Filter by organization type"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
