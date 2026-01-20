@@ -1,5 +1,5 @@
 """
-Uzhathunai Farming Platform v2.0 - Main FastAPI Application
+AggroConnect Backend v2.0 - Agricultural Management API
 """
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Multi-tenant farming and FSP management platform",
+    description="Comprehensive agricultural supply chain and farm management solution",
     lifespan=lifespan
 )
 

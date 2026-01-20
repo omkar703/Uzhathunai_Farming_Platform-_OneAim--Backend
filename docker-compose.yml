@@ -2,7 +2,7 @@ services:
   web:
     build: .
     image: farm-backend
-    container_name: farm_backend
+    container_name: aggroconnect_backend
     ports:
       - "8000:8000"
     env_file:
@@ -19,7 +19,7 @@ services:
 
   db:
     image: postgis/postgis:15-3.3
-    container_name: farm_db
+    container_name: aggroconnect_db
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -31,7 +31,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: farm_redis
+    container_name: aggroconnect_redis
     ports:
       - "6379:6379"
 

@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     """Application settings."""
     
     # Application
-    APP_NAME: str = "Uzhathunai Farming Platform"
+    APP_NAME: str = "AggroConnect Backend"
     APP_VERSION: str = "2.0.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "development"

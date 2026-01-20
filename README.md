@@ -1,229 +1,256 @@
-# Uzhathunai Farming Platform v2.0 - Backend
+# AggroConnect Backend
 
-FastAPI-based backend for the Uzhathunai multi-tenant farming and FSP management platform.
+**Version**: 2.0.0  
+**Type**: Agricultural Supply Chain & Farm Management API
 
-## Setup Instructions
+## Overview
+
+AggroConnect Backend is a comprehensive agricultural management platform designed to streamline farming operations, supply chain management, and service provider coordination. Built with modern technologies and scalable architecture.
+
+## Features
+
+### Core Capabilities
+- 🌾 **Farm Management** - Complete farm and plot lifecycle management
+- 📊 **Crop Tracking** - Real-time crop monitoring and yield analytics
+- 🤝 **Service Provider Network** - Connect with agricultural service providers
+- 📅 **Schedule Management** - Plan and track farming activities
+- 📋 **Work Order System** - Manage tasks and assignments
+- 🔍 **Farm Audit System** - Comprehensive farm inspection and compliance
+- 💰 **Financial Tracking** - Monitor expenses and revenues
+- 📱 **Multi-tenant Architecture** - Support for multiple organizations
+
+### Technical Features
+- RESTful API with OpenAPI documentation
+- JWT-based authentication
+- Role-based access control (RBAC)
+- Multi-language support (English, Tamil, Malayalam)
+- Geospatial data support with PostGIS
+- Real-time notifications
+- File upload and management
+- Video consultation integration
+
+## Technology Stack
+
+- **Framework**: FastAPI 0.104+
+- **Database**: PostgreSQL 15 with PostGIS
+- **Cache**: Redis 7
+- **Authentication**: JWT tokens
+- **Documentation**: Swagger UI / ReDoc
+- **Deployment**: Docker & Docker Compose
+
+## Quick Start
 
 ### Prerequisites
+- Docker & Docker Compose
+- Python 3.11+ (for local development)
+- PostgreSQL 15+ with PostGIS (if not using Docker)
 
-- Python 3.10 or higher
-- PostgreSQL 14+ with PostGIS extension
-- Redis 6+
-- Virtual environment tool (venv or virtualenv)
+### Running with Docker (Recommended)
 
-### Database Setup
-
-1. Create the database:
-```sql
-CREATE DATABASE uzhathunai_db_v2;
-```
-
-2. Enable required extensions:
-```sql
-\c uzhathunai_db_v2
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "postgis";
-CREATE EXTENSION IF NOT EXISTS "pg_trgm";
-```
-
-3. Run the DDL script:
 ```bash
-psql -U postgres -d uzhathunai_db_v2 -f db_scripts/001_uzhathunai_ddl.sql
+# Clone the repository
+git clone <repository-url>
+cd aggroconnect-backend
+
+# Start all services
+docker compose up -d
+
+# View logs
+docker compose logs -f web
+
+# Stop services
+docker compose down
 ```
 
-4. (Optional) Run the DML script for sample data:
-```bash
-psql -U postgres -d uzhathunai_db_v2 -f db_scripts/a01_uzhathunai_dml.sql
-```
+### Access Points
 
-### Backend Setup
-
-1. Create and activate virtual environment:
-```bash
-cd backend
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# Linux/Mac
-source venv/bin/activate
-```
-
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-3. Create `.env` file:
-```bash
-copy .env.example .env  # Windows
-cp .env.example .env    # Linux/Mac
-```
-
-4. Update `.env` with your configuration:
-```env
-DATABASE_URL=postgresql://postgres:your_password@localhost:5432/uzhathunai_db_v2
-SECRET_KEY=your-secret-key-here
-REDIS_URL=redis://localhost:6379/0
-```
-
-5. Run the application:
-```bash
-# Development mode with auto-reload
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-# Or using the main.py directly
-python app/main.py
-```
-
-6. Access the API:
-- API Documentation: http://localhost:8000/docs
-- Health Check: http://localhost:8000/health
-- Root: http://localhost:8000/
+- **API Documentation**: http://localhost:8000/docs
+- **Alternative Docs**: http://localhost:8000/redoc
+- **Health Check**: http://localhost:8000/health
+- **API Base**: http://localhost:8000/api/v1
 
 ## Project Structure
 
 ```
-backend/
+aggroconnect-backend/
 ├── app/
-│   ├── core/              # Core infrastructure
-│   │   ├── config.py      # Configuration settings
-│   │   ├── database.py    # Database connection
-│   │   ├── logging.py     # Structured logging
-│   │   ├── exceptions.py  # Custom exceptions
-│   │   ├── security.py    # Auth & security utilities
-│   │   └── cache.py       # Redis caching
-│   ├── models/            # SQLAlchemy models (to be added)
-│   ├── schemas/           # Pydantic schemas (to be added)
-│   ├── services/          # Business logic (to be added)
-│   ├── api/               # API routes (to be added)
-│   │   └── v1/
-│   └── main.py            # FastAPI application
-├── db_scripts/            # Database scripts
-│   ├── 001_uzhathunai_ddl.sql
-│   └── a01_uzhathunai_dml.sql
-├── tests/                 # Test files (to be added)
-├── .env.example           # Environment variables template
-├── .gitignore
-├── requirements.txt       # Python dependencies
-└── README.md
+│   ├── api/              # API endpoints
+│   ├── core/             # Core configuration
+│   ├── models/           # Database models
+│   ├── schemas/          # Pydantic schemas
+│   ├── services/         # Business logic
+│   └── main.py           # Application entry point
+├── docker-compose.yml    # Docker services
+├── Dockerfile            # Container definition
+├── requirements.txt      # Python dependencies
+└── README.md            # This file
 ```
 
-## Development Workflow
+## API Modules
 
-### Vertical Slice Approach
+### Authentication & Users
+- User registration and login
+- JWT token management
+- Password management
+- Organization switching
 
-Build each feature end-to-end before moving to the next:
+### Organization Management
+- Multi-tenant organization support
+- Member management
+- Role assignments
+- Organization approval workflow
 
-1. **Phase 1: Foundation** ✅ (Current)
-   - Project setup
-   - Core infrastructure
-   - Database connection
-   - Health check endpoint
+### Farm Operations
+- Farm CRUD operations
+- Plot management
+- Crop lifecycle tracking
+- Yield recording
+- Photo documentation
 
-2. **Phase 2: Authentication & Authorization** (Next)
-   - User registration/login
-   - JWT tokens
-   - RBAC system
+### Service Provider Network
+- FSP service listings
+- Marketplace browsing
+- Service booking
+- Document management
 
-3. **Phase 3+: Feature Development**
-   - Organizations
-   - Farms & Plots
-   - Crops
-   - Schedules
-   - FSP Marketplace
-   - Audits
-   - etc.
+### Work Management
+- Work order creation
+- Schedule templates
+- Task actuals
+- Change log tracking
 
-### Testing
+### Farm Audit
+- Audit templates
+- Parameter management
+- Response collection
+- Report generation
+
+### Financial Management
+- Category management
+- Transaction tracking
+- Budget monitoring
+
+## Configuration
+
+Key environment variables (create `.env` file):
+
+```bash
+# Application
+APP_NAME=AggroConnect Backend
+APP_VERSION=2.0.0
+ENVIRONMENT=development
+
+# Security
+SECRET_KEY=your-secret-key-here
+ALGORITHM=HS256
+
+# Database
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/aggroconnect_db
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+
+# CORS
+CORS_ORIGINS=http://localhost:3000,http://localhost:8000
+```
+
+## Development
+
+### Local Setup
+
+```bash
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run database migrations
+alembic upgrade head
+
+# Start development server
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Database Migrations
+
+```bash
+# Create new migration
+alembic revision --autogenerate -m "description"
+
+# Apply migrations
+alembic upgrade head
+
+# Rollback
+alembic downgrade -1
+```
+
+## Testing
 
 ```bash
 # Run all tests
 pytest
 
 # Run with coverage
-pytest --cov=app --cov-report=html
+pytest --cov=app tests/
 
 # Run specific test file
 pytest tests/test_auth.py
 ```
 
-## Key Features
+## API Authentication
 
-- **Multi-tenant Architecture**: Row-level security with organization isolation
-- **Comprehensive RBAC**: Roles, permissions, and org-level overrides
-- **Offline Sync Support**: (Phase 2) Mobile offline-first capabilities
-- **Multilingual**: Full translation support for reference data
-- **Observability**: Structured logging, metrics, and monitoring
-- **Feature Flags**: Gradual rollout and A/B testing support
-
-## API Documentation
-
-Once the server is running, visit:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-## Environment Variables
-
-See `.env.example` for all available configuration options.
-
-Key variables:
-- `DATABASE_URL`: PostgreSQL connection string
-- `SECRET_KEY`: JWT secret key (generate with `openssl rand -hex 32`)
-- `REDIS_URL`: Redis connection string
-- `DEBUG`: Enable debug mode (True/False)
-- `LOG_LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR)
-
-## Troubleshooting
-
-### Database Connection Issues
+All protected endpoints require JWT authentication:
 
 ```bash
-# Test PostgreSQL connection
-psql -U postgres -d uzhathunai_db_v2 -c "SELECT version();"
+# Login to get token
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password"}'
 
-# Check if PostGIS is installed
-psql -U postgres -d uzhathunai_db_v2 -c "SELECT PostGIS_version();"
+# Use token in requests
+curl -X GET http://localhost:8000/api/v1/farms/ \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
-### Redis Connection Issues
+## Deployment
+
+### Docker Production
 
 ```bash
-# Test Redis connection
-redis-cli ping
+# Build production image
+docker build -t aggroconnect-backend:latest .
 
-# Should return: PONG
+# Run with production settings
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-### Import Errors
+### Environment-Specific Configs
 
-```bash
-# Ensure you're in the backend directory
-cd backend
+- Development: `docker-compose.yml`
+- Production: `docker-compose.prod.yml`
+- Testing: `docker-compose.test.yml`
 
-# Activate virtual environment
-venv\Scripts\activate  # Windows
-source venv/bin/activate  # Linux/Mac
+## Support & Documentation
 
-# Reinstall dependencies
-pip install -r requirements.txt
-```
+- **API Docs**: http://localhost:8000/docs
+- **OpenAPI Spec**: http://localhost:8000/openapi.json
+- **Health Status**: http://localhost:8000/health
 
-## Next Steps
+## License
 
-1. ✅ Project setup complete
-2. ⏳ Implement authentication endpoints
-3. ⏳ Implement organization management
-4. ⏳ Implement farm management
-5. ⏳ Continue with vertical slices...
+Proprietary - All rights reserved
 
-## Reference
+## Version History
 
-- Specification: `docs/uzhathunai_ver2.0.md`
-- Database Design: `db_design_evolution_reference/`
-- v1.0 Reference: `old_app_reference/backend/`
+### v2.0.0 (Current)
+- Complete platform rewrite
+- Multi-tenant architecture
+- Enhanced farm audit system
+- FSP marketplace integration
+- Video consultation support
 
-## Support
+---
 
-For issues or questions, refer to the comprehensive development guide in `docs/uzhathunai_ver2.0.md`.
+**Built with ❤️ for the agricultural community**
