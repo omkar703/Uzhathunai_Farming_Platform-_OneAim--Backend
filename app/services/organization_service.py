@@ -89,8 +89,8 @@ class OrganizationService:
             self._validate_organization_name(data.name, user_id)
             
             # Determine initial status
-            # All new organizations are PENDING (NOT_STARTED) by default
-            status = OrganizationStatus.NOT_STARTED
+            # All new organizations are ACTIVE by default (Auto-approved)
+            status = OrganizationStatus.ACTIVE
             
             # Create organization
             org = Organization(
