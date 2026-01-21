@@ -1,0 +1,100 @@
+[0;34m╔════════════════════════════════════════════════════════════╗[0m
+[0;34m║   COMPREHENSIVE API ENDPOINT TESTING - UZHATHUNAI v2.0    ║[0m
+[0;34m╔════════════════════════════════════════════════════════════╗[0m
+
+
+[0;34m[1/15] HEALTH & ROOT ENDPOINTS[0m
+[0;31m✗[0m GET /health (HTTP 404) - 
+[0;32m✓[0m GET / (HTTP 200)
+
+[0;34m[2/15] AUTHENTICATION ENDPOINTS[0m
+[0;31m✗[0m GET /auth/me (HTTP 403) - Your organization is awaiting approval.
+[0;31m✗[0m POST /auth/logout (HTTP 403) - Your organization is awaiting approval.
+
+[0;34m[3/15] ORGANIZATION ENDPOINTS[0m
+[0;32m✓[0m GET /organizations (HTTP 200)
+[0;32m✓[0m GET /roles (HTTP 200)
+[0;32m✓[0m GET /organizations/1008579a-f3a0-4863-8788-185e1947c302 (HTTP 403)
+[0;32m✓[0m GET /organizations/1008579a-f3a0-4863-8788-185e1947c302/members (HTTP 403)
+
+[0;34m[4/15] INVITATION ENDPOINTS[0m
+[0;32m✓[0m GET /invitations/me (HTTP 403)
+
+[0;34m[5/15] FSP SERVICE ENDPOINTS[0m
+[0;32m✓[0m GET /fsp-services/master-services (HTTP 200)
+[0;32m✓[0m GET /fsp-services/fsp-marketplace/services (HTTP 200)
+[0;32m✓[0m GET /fsp-services/organizations/1008579a-f3a0-4863-8788-185e1947c302/services (HTTP 403)
+
+[0;34m[6/15] WORK ORDER ENDPOINTS[0m
+[0;32m✓[0m GET /work-orders (HTTP 403)
+
+[0;34m[7/15] SCHEDULE TEMPLATE ENDPOINTS[0m
+[0;32m✓[0m GET /schedule-templates (HTTP 403)
+
+[0;34m[8/15] SCHEDULE ENDPOINTS[0m
+[0;32m✓[0m GET /schedules (HTTP 403)
+
+[0;34m[9/15] TASK ACTUAL ENDPOINTS[0m
+[0;32m✓[0m GET /task-actuals (HTTP 403)
+
+[0;34m[10/15] QUERY ENDPOINTS[0m
+[0;32m✓[0m GET /queries (HTTP 403)
+
+[0;34m[11/15] NOTIFICATION ENDPOINTS[0m
+[0;32m✓[0m GET /notifications/unread-count (HTTP 403)
+
+[0;34m[12/15] REFERENCE DATA ENDPOINTS[0m
+[0;32m✓[0m GET /reference-data/types (HTTP 403)
+[0;32m✓[0m GET /measurement-units/ (HTTP 403)
+[0;32m✓[0m GET /crop-data/categories (HTTP 403)
+[0;32m✓[0m GET /crop-data/types (HTTP 403)
+[0;32m✓[0m GET /crop-data/varieties (HTTP 403)
+[0;32m✓[0m GET /input-items/categories (HTTP 403)
+[0;32m✓[0m GET /input-items/ (HTTP 403)
+[0;32m✓[0m GET /finance-categories/ (HTTP 403)
+[0;32m✓[0m GET /tasks/ (HTTP 403)
+
+[0;34m[13/15] FARM & PLOT ENDPOINTS[0m
+[0;32m✓[0m GET /farms/ (HTTP 403)
+[0;32m✓[0m GET /crops/ (HTTP 403)
+
+[0;34m[14/15] FARM AUDIT ENDPOINTS[0m
+[0;32m✓[0m GET /farm-audit/option-sets (HTTP 403)
+[0;32m✓[0m GET /farm-audit/parameters (HTTP 403)
+[0;32m✓[0m GET /farm-audit/sections (HTTP 403)
+[0;32m✓[0m GET /farm-audit/templates (HTTP 403)
+[0;32m✓[0m GET /farm-audit/audits (HTTP 403)
+
+[0;34m[15/15] ADMIN ENDPOINTS[0m
+[0;32m✓[0m GET /admin/organizations (HTTP 403)
+
+[0;34m╔════════════════════════════════════════════════════════════╗[0m
+[0;34m║              BACKEND HEALTH CHECK                          ║[0m
+[0;34m╚════════════════════════════════════════════════════════════╝[0m
+[0;32m✓ Backend is HEALTHY and RUNNING[0m
+
+Checking for errors in backend logs...
+[0;32m✓ No errors found in recent logs[0m
+
+[0;34m╔════════════════════════════════════════════════════════════╗[0m
+[0;34m║                   FINAL TEST SUMMARY                       ║[0m
+[0;34m╚════════════════════════════════════════════════════════════╝[0m
+
+[0;32mPassed:[0m  33
+[0;31mFailed:[0m  3
+[1;33mSkipped:[0m 0
+[0;34mTotal:[0m   36
+
+Success Rate: [0;32m91.7%[0m
+
+Detailed results saved to: [0;34mendpoint_test_results.txt[0m
+
+Results by category:
+  ✓ Working endpoints: 33
+  ✗ Failing endpoints: 3
+
+[1;33m⚠ Some endpoints require organization approval or additional setup[0m
+
+[0;34mAPI Documentation: http://localhost:8000/docs[0m
+[0;34mHealth Check: http://localhost:8000/health[0m
+

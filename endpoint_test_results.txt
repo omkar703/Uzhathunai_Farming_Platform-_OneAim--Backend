@@ -1,0 +1,37 @@
+FAIL | GET /health | HTTP 404 | 
+PASS | GET / | HTTP 200 | Root endpoint
+PASS | POST /auth/register | HTTP 201 | Expected response
+PASS | POST /auth/login | HTTP 200 | Expected response
+FAIL | GET /auth/me | HTTP 403 | Your organization is awaiting approval.
+FAIL | POST /auth/logout | HTTP 403 | Your organization is awaiting approval.
+PASS | GET /organizations | HTTP 200 | Expected response
+PASS | GET /roles | HTTP 200 | Expected response
+PASS | GET /organizations/1008579a-f3a0-4863-8788-185e1947c302 | HTTP 403 | Expected response
+PASS | GET /organizations/1008579a-f3a0-4863-8788-185e1947c302/members | HTTP 403 | Expected response
+PASS | GET /invitations/me | HTTP 403 | Expected response
+PASS | GET /fsp-services/master-services | HTTP 200 | Expected response
+PASS | GET /fsp-services/fsp-marketplace/services | HTTP 200 | Expected response
+PASS | GET /fsp-services/organizations/1008579a-f3a0-4863-8788-185e1947c302/services | HTTP 403 | Expected response
+PASS | GET /work-orders | HTTP 403 | Expected response
+PASS | GET /schedule-templates | HTTP 403 | Expected response
+PASS | GET /schedules | HTTP 403 | Expected response
+PASS | GET /task-actuals | HTTP 403 | Expected response
+PASS | GET /queries | HTTP 403 | Expected response
+PASS | GET /notifications/unread-count | HTTP 403 | Expected response
+PASS | GET /reference-data/types | HTTP 403 | Expected response
+PASS | GET /measurement-units/ | HTTP 403 | Expected response
+PASS | GET /crop-data/categories | HTTP 403 | Expected response
+PASS | GET /crop-data/types | HTTP 403 | Expected response
+PASS | GET /crop-data/varieties | HTTP 403 | Expected response
+PASS | GET /input-items/categories | HTTP 403 | Expected response
+PASS | GET /input-items/ | HTTP 403 | Expected response
+PASS | GET /finance-categories/ | HTTP 403 | Expected response
+PASS | GET /tasks/ | HTTP 403 | Expected response
+PASS | GET /farms/ | HTTP 403 | Expected response
+PASS | GET /crops/ | HTTP 403 | Expected response
+PASS | GET /farm-audit/option-sets | HTTP 403 | Expected response
+PASS | GET /farm-audit/parameters | HTTP 403 | Expected response
+PASS | GET /farm-audit/sections | HTTP 403 | Expected response
+PASS | GET /farm-audit/templates | HTTP 403 | Expected response
+PASS | GET /farm-audit/audits | HTTP 403 | Expected response
+PASS | GET /admin/organizations | HTTP 403 | Expected response

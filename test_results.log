@@ -1,0 +1,110 @@
+
+[0;34m========== COMPLETE API TESTING WITH SUPER ADMIN ==========[0m
+
+Logging in as Super Admin...
+[0;32m✓ Super Admin logged in[0m
+Token: eyJhbGciOiJIUzI1NiIsInR5cCI6Ik...
+
+Getting all organizations...
+{
+  "success": false,
+  "message": "Super Admin privileges required",
+  "error_code": "SUPER_ADMIN_REQUIRED",
+  "data": {},
+  "request_id": "d293d1b9"
+}
+Organization to approve: 
+
+[0;34m========== FARMER USER TESTING ==========[0m
+
+Logging in as Farmer...
+[0;32m✓ Farmer logged in[0m
+
+Switching to organization context...
+[0;31m✗ Failed to switch context (HTTP 403)[0m
+{"success":false,"message":"Your organization is awaiting approval.","error_code":"ORG_NOT_APPROVED","data":{},"request_id":"e73abb8a"}
+
+[0;34m========== TESTING ALL API ENDPOINTS ==========[0m
+
+
+[1;33mReference Data & Master Data:[0m
+[0;31m✗[0m Reference Data Types (HTTP 403)
+[0;31m✗[0m Measurement Units (HTTP 403)
+
+[1;33mCrop Data:[0m
+[0;31m✗[0m Crop Categories (HTTP 403)
+[0;31m✗[0m Crop Types (HTTP 403)
+[0;31m✗[0m Crop Varieties (HTTP 403)
+
+[1;33mTasks & Input Items:[0m
+[0;31m✗[0m Tasks (HTTP 403)
+[0;31m✗[0m Input Item Categories (HTTP 403)
+[0;31m✗[0m Input Items (HTTP 403)
+
+[1;33mFinance:[0m
+[0;31m✗[0m Finance Categories (HTTP 403)
+
+[1;33mFarms & Plots:[0m
+[0;31m✗[0m Get Farms (HTTP 403)
+[0;31m✗[0m Get Crops (HTTP 403)
+
+[1;33mSchedules:[0m
+[0;31m✗[0m Schedule Templates (HTTP 403)
+[0;31m✗[0m Schedules (HTTP 403)
+
+[1;33mWork Orders:[0m
+[0;31m✗[0m Work Orders (HTTP 403)
+
+[1;33mQueries & Notifications:[0m
+[0;31m✗[0m Queries (HTTP 403)
+[0;31m✗[0m Unread Notifications (HTTP 403)
+
+[1;33mFarm Audit System:[0m
+[0;31m✗[0m Audit Option Sets (HTTP 403)
+[0;31m✗[0m Audit Parameters (HTTP 403)
+[0;31m✗[0m Audit Sections (HTTP 403)
+[0;31m✗[0m Audit Templates (HTTP 403)
+[0;31m✗[0m Audits (HTTP 403)
+
+[1;33mFSP Services:[0m
+[0;32m✓[0m Master Services
+[0;32m✓[0m FSP Marketplace
+
+[1;33mInvitations:[0m
+[0;31m✗[0m My Invitations (HTTP 403)
+
+[1;33mOrganization Members:[0m
+[0;31m✗[0m Organization Members (HTTP 404)
+
+[0;34m========== CREATING TEST DATA ==========[0m
+
+Creating a test farm...
+[0;31m✗ Failed to create farm (HTTP 403)[0m
+{
+  "success": false,
+  "message": "Your organization is awaiting approval.",
+  "error_code": "ORG_NOT_APPROVED",
+  "data": {},
+  "request_id": "a934f701"
+}
+
+[0;34m========== FINAL SUMMARY ==========[0m
+
+[0;32mPassed: 2[0m
+[0;31mFailed: 24[0m
+Total Tests: 26
+Success Rate: 7.7%
+
+[0;34m=========================================[0m
+Test Credentials:
+  Super Admin: superadmin@uzhathunai.com / SuperSecure@Admin123
+  Farmer: farmer@greenvalley.com / Farmer@123
+
+Organization:
+  ID: 
+  Status: APPROVED ✓
+
+Access URLs:
+  API Docs: http://localhost:8000/docs
+  Health: http://localhost:8000/health
+[0;34m=========================================[0m

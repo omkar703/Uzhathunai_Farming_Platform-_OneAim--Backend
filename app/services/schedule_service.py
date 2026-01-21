@@ -247,13 +247,13 @@ class ScheduleService:
             query = query.filter(Schedule.crop_id == crop_id)
         
         # Apply access control
-        if user.is_system_user():
-            # System users can see all schedules
-            pass
-        else:
-            # Get accessible crop IDs for user
-            accessible_crop_ids = self._get_accessible_crop_ids(user)
-            query = query.filter(Schedule.crop_id.in_(accessible_crop_ids))
+        # if user.is_system_user():
+        #     # System users can see all schedules
+        #     pass
+        # else:
+        # Get accessible crop IDs for user
+        accessible_crop_ids = self._get_accessible_crop_ids(user)
+        query = query.filter(Schedule.crop_id.in_(accessible_crop_ids))
         
         # Get total count
         total = query.count()
@@ -280,8 +280,8 @@ class ScheduleService:
         Validates: Requirements 6.1, 6.2, 6.4, 7.1, 7.2, 7.3
         """
         # System users can create schedules for any crop (Requirement 6.3, 7.3)
-        if user.is_system_user():
-            return
+        # if user.is_system_user():
+        #     return
         
         # Check if user is FSP with consultancy service
         if self._is_fsp_consultancy_user(user):
