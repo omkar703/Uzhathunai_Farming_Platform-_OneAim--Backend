@@ -32,7 +32,7 @@ class ScheduleTemplate(Base):
     code = Column(String(50), nullable=False)
     
     # Foreign keys
-    crop_type_id = Column(UUID(as_uuid=True), ForeignKey('crop_types.id'), index=True)
+    crop_type_id = Column(UUID(as_uuid=True), ForeignKey('crop_types.id'), index=True, nullable=True)
     crop_variety_id = Column(UUID(as_uuid=True), ForeignKey('crop_varieties.id'), index=True)
     
     # Ownership

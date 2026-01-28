@@ -38,12 +38,19 @@ class ScheduleFromTemplateCreate(BaseModel):
         except (ValueError, TypeError):
             raise ValueError("start_date must be in ISO format (YYYY-MM-DD)")
         
-        # area and area_unit_id should be together
+        # Support both old (area/plant_count) and new (total_acres/total_plants) parameters
+        # Ensure units are provided if needed
         if 'area' in v and 'area_unit_id' not in v:
             raise ValueError("area_unit_id is required when area is provided")
         
         if 'area_unit_id' in v and 'area' not in v:
             raise ValueError("area is required when area_unit_id is provided")
+
+        # Optional: Verify numeric types for scaling factors
+        numeric_fields = ['area', 'plant_count', 'total_acres', 'total_plants', 'water_liters']
+        for field in numeric_fields:
+            if field in v and not isinstance(v[field], (int, float)):
+                 raise ValueError(f"{field} must be a number")
         
         return v
     
@@ -72,6 +79,8 @@ class ScheduleFromScratchCreate(BaseModel):
     crop_id: UUID = Field(..., description="Target crop ID")
     name: str = Field(..., min_length=1, max_length=200, description="Schedule name")
     description: Optional[str] = Field(None, description="Schedule description")
+    start_date: Optional[date] = Field(None, description="Schedule start date (for reference)")
+    template_parameters: Optional[Dict[str, Any]] = Field(None, description="Parameters (area, plant_count) for reference")
     
     class Config:
         json_schema_extra = {
@@ -258,6 +267,9 @@ class ScheduleResponse(BaseModel):
     description: Optional[str]
     template_parameters: Optional[Dict[str, Any]]
     is_active: bool
+    status: Optional[str] = None # Changed to str to allow 'ACTIVE'
+    farm_name: Optional[str] = None
+    crop_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     created_by: UUID
@@ -265,6 +277,23 @@ class ScheduleResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+    @validator('farm_name', always=True, pre=True, check_fields=False)
+    def get_farm_name(cls, v, values):
+        # Handle ORM object access
+        if v: return v
+        # Access validation context or object if possible? 
+        # Pydantic v1 with ORM mode is tricky for nested relationships if not loaded.
+        # But we can try to rely on the object passed.
+        # However, 'values' only contains already validated fields. 
+        # The 'v' here is the value from the object attribute 'farm_name' which doesn't exist.
+        return None
+
+    # Actually, simpler approach for ORM computed fields in Pydantic v1/v2 compat:
+    # We rely on the service to populate, OR we add properties to the Model.
+    # For now, let's just add the fields so they CAN be returned.
+    # status is on the model, so it will work.
+    # farm_name/crop_name might need Backend Service update.
 
 
 class ScheduleWithTasksResponse(BaseModel):
@@ -284,3 +313,13 @@ class ScheduleWithTasksResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class PaginatedScheduleResponse(BaseModel):
+    """Schema for paginated schedule response."""
+    items: List[ScheduleResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+

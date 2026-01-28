@@ -3,7 +3,7 @@ User model and related authentication models for Uzhathunai v2.0.
 """
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -35,6 +35,10 @@ class User(Base):
     first_name = Column(String(100))
     last_name = Column(String(100))
     phone = Column(String(20), index=True)
+    bio = Column(Text)
+    address = Column(Text)
+    specialization = Column(String(200))
+    profile_picture_url = Column(String(500))
     
     # Preferences
     preferred_language = Column(String(10), default='en')
@@ -82,6 +86,10 @@ class User(Base):
             "first_name": self.first_name,
             "last_name": self.last_name,
             "phone": self.phone,
+            "bio": self.bio,
+            "address": self.address,
+            "specialization": self.specialization,
+            "profile_picture_url": self.profile_picture_url,
             "preferred_language": self.preferred_language,
             "is_active": self.is_active,
             "is_verified": self.is_verified,

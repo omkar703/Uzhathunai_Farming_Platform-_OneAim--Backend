@@ -290,26 +290,37 @@ class InputItemService:
         org_id: UUID,
         category_id: Optional[UUID] = None,
         language: str = "en",
-        include_system: bool = True
-    ) -> List[InputItemResponse]:
+        include_system: bool = True,
+        page: int = 1,
+        limit: int = 50,
+        search: Optional[str] = None
+    ) -> dict:
         """
-        Get input items (system-defined and org-specific).
+        Get paginated input items (system-defined and org-specific).
         
         Args:
             org_id: Organization ID
             category_id: Optional category ID to filter by
             language: Language code for translations (default: en)
             include_system: Include system-defined items (default: True)
+            page: Page number (default: 1)
+            limit: Items per page (default: 50, max: 100)
+            search: Optional search query for item name or code
             
         Returns:
-            List of input items
+            Dict containing items list and pagination metadata
         """
-        from sqlalchemy.orm import joinedload
+        from sqlalchemy.orm import selectinload
+        from sqlalchemy import exists
+        import math
+        
+        # Ensure limit is reasonable
+        limit = min(max(1, limit), 100)
+        page = max(1, page)
+        offset = (page - 1) * limit
         
         query = self.db.query(InputItem).filter(
             InputItem.is_active == True
-        ).options(
-            joinedload(InputItem.category).joinedload(InputItemCategory.translations)
         )
         
         # Filter by category
@@ -333,24 +344,61 @@ class InputItemService:
                     InputItem.owner_org_id == org_id
                 )
             )
+            
+        # Filter by search query
+        if search:
+            search_pattern = f"%{search}%"
+            # Use exists() for translations to avoid duplicates and the need for distinct()
+            translation_exists = exists().where(
+                and_(
+                    InputItemTranslation.input_item_id == InputItem.id,
+                    InputItemTranslation.name.ilike(search_pattern)
+                )
+            )
+            query = query.filter(
+                or_(
+                    InputItem.code.ilike(search_pattern),
+                    translation_exists
+                )
+            )
         
-        items = query.order_by(
+        # Get total count before pagination
+        total_count = query.count()
+        
+        # Apply pagination and sorting
+        # Sort system items first, then by sort_order and code
+        # Use selectinload for efficient eager loading of relationships
+        items = query.options(
+            selectinload(InputItem.translations),
+            selectinload(InputItem.category).selectinload(InputItemCategory.translations)
+        ).order_by(
+            InputItem.is_system_defined.desc(),
             InputItem.sort_order,
             InputItem.code
-        ).all()
+        ).offset(offset).limit(limit).all()
+        
+        total_pages = math.ceil(total_count / limit) if total_count > 0 else 0
         
         logger.info(
-            "Retrieved input items",
+            "Retrieved paginated input items",
             extra={
                 "org_id": str(org_id),
                 "category_id": str(category_id) if category_id else None,
                 "count": len(items),
-                "include_system": include_system,
-                "language": language
+                "total": total_count,
+                "page": page,
+                "limit": limit,
+                "search": search
             }
         )
         
-        return [self._to_item_response(item, language) for item in items]
+        return {
+            "items": [self._to_item_response(item, language) for item in items],
+            "total": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": total_pages
+        }
     
     def create_org_item(
         self,

@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     CACHE_PREFIX: str = "uzhathunai"
     
     # CORS
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8082,http://localhost:19006"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000,http://localhost:8081,http://localhost:8082,http://localhost:19006"
     
     @property
     def BACKEND_CORS_ORIGINS(self) -> List[str]:

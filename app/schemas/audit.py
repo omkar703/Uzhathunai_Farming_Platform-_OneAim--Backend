@@ -9,13 +9,19 @@ from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import date, datetime
 from enum import Enum
+from app.schemas.user import UserResponse
 
 
 class AuditStatusEnum(str, Enum):
     """Audit status enum for API"""
+    PENDING = "PENDING"
     DRAFT = "DRAFT"
     IN_PROGRESS = "IN_PROGRESS"
     SUBMITTED = "SUBMITTED"
+    COMPLETED = "COMPLETED"
+    SUBMITTED_TO_FARMER = "SUBMITTED_TO_FARMER"
+    SUBMITTED_FOR_REVIEW = "SUBMITTED_FOR_REVIEW"
+    IN_ANALYSIS = "IN_ANALYSIS"
     REVIEWED = "REVIEWED"
     FINALIZED = "FINALIZED"
     SHARED = "SHARED"
@@ -38,6 +44,7 @@ class AuditCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200, description="Name for the audit")
     work_order_id: Optional[UUID] = Field(None, description="Optional work order ID")
     audit_date: Optional[date] = Field(None, description="Audit date (defaults to today)")
+    assigned_to: Optional[UUID] = Field(None, description="UUID of the user to assign the audit to")
 
     @validator('name')
     def validate_name(cls, v):
@@ -60,28 +67,48 @@ class AuditCreate(BaseModel):
 
 # Response Schemas
 
+class AuditAssignRequest(BaseModel):
+    """Schema for assigning an audit"""
+    assigned_to: Optional[UUID] = Field(None, description="UUID of the user to assign the audit to (Field Officer)")
+    analyst_id: Optional[UUID] = Field(None, description="UUID of the user to assign as analyst")
+
+
+class FSPContactInfo(BaseModel):
+    """Schema for FSP contact info"""
+    address: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+
 class AuditResponse(BaseModel):
     """Schema for audit response"""
     id: UUID
     fsp_organization_id: UUID
     farming_organization_id: UUID
-    work_order_id: Optional[UUID]
+    work_order_id: Optional[UUID] = None
     crop_id: UUID
     template_id: UUID
-    audit_number: Optional[str]
+    audit_number: Optional[str] = None
     name: str
     status: AuditStatusEnum
-    audit_date: Optional[date]
-    sync_status: Optional[SyncStatusEnum]
+    audit_date: Optional[date] = None
+    sync_status: Optional[SyncStatusEnum] = None
     created_at: datetime
     updated_at: datetime
-    created_by: Optional[UUID]
-    finalized_at: Optional[datetime]
-    finalized_by: Optional[UUID]
-    shared_at: Optional[datetime]
+    created_by: Optional[UUID] = None
+    finalized_at: Optional[datetime] = None
+    finalized_by: Optional[UUID] = None
+    shared_at: Optional[datetime] = None
+    assigned_to: Optional[UserResponse] = Field(None, description="User assigned to execute the audit")
+    analyst: Optional[UserResponse] = Field(None, description="User assigned to analyze the audit")
+    progress: float = Field(0.0, description="Audit completion progress percentage")
+    
+    # Enriched fields
+    fsp_organization_name: Optional[str] = Field(None, description="Name of the FSP organization")
+    fsp_contact_info: Optional[FSPContactInfo] = Field(None, description="Contact details of the FSP")
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         use_enum_values = True
 
 
@@ -91,6 +118,7 @@ class ParameterInstanceResponse(BaseModel):
     parameter_id: str
     is_required: bool
     sort_order: int
+    name: Optional[str] = None
     parameter_snapshot: Dict[str, Any]
 
 
@@ -131,6 +159,7 @@ class ResponseSubmit(BaseModel):
     response_date: Optional[date] = Field(None, description="Date response for DATE parameters")
     response_options: Optional[List[UUID]] = Field(None, description="Option IDs for SINGLE_SELECT/MULTI_SELECT parameters")
     notes: Optional[str] = Field(None, description="Additional notes")
+    evidence_urls: Optional[List[str]] = Field(None, description="List of evidence photo URLs")
 
     class Config:
         schema_extra = {
@@ -149,6 +178,7 @@ class ResponseUpdate(BaseModel):
     response_date: Optional[date] = Field(None, description="Date response for DATE parameters")
     response_options: Optional[List[UUID]] = Field(None, description="Option IDs for SINGLE_SELECT/MULTI_SELECT parameters")
     notes: Optional[str] = Field(None, description="Additional notes")
+    evidence_urls: Optional[List[str]] = Field(None, description="List of evidence photo URLs")
 
 
 class AuditResponseDetail(BaseModel):
@@ -166,7 +196,7 @@ class AuditResponseDetail(BaseModel):
     created_by: Optional[UUID]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class AuditResponseListResponse(BaseModel):
@@ -180,7 +210,7 @@ class AuditResponseListResponse(BaseModel):
 class PhotoUploadResponse(BaseModel):
     """Schema for photo upload response"""
     id: UUID
-    audit_response_id: UUID
+    audit_response_id: Optional[UUID] = None
     file_url: str
     file_key: Optional[str]
     caption: Optional[str]
@@ -188,7 +218,7 @@ class PhotoUploadResponse(BaseModel):
     uploaded_by: Optional[UUID]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class PhotoListResponse(BaseModel):
@@ -278,7 +308,7 @@ class ReviewResponse(BaseModel):
     reviewed_by: Optional[UUID]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class FlagRequest(BaseModel):
@@ -317,7 +347,7 @@ class PhotoAnnotationResponse(BaseModel):
     reviewed_by: Optional[UUID]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # ============================================
@@ -381,13 +411,13 @@ class IssueResponse(BaseModel):
     id: UUID
     audit_id: UUID
     title: str
-    description: Optional[str]
-    severity: Optional[IssueSeverityEnum]
+    description: Optional[str] = None
+    severity: Optional[IssueSeverityEnum] = None
     created_at: datetime
-    created_by: Optional[UUID]
+    created_by: Optional[UUID] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         schema_extra = {
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
@@ -399,6 +429,12 @@ class IssueResponse(BaseModel):
                 "created_by": "123e4567-e89b-12d3-a456-426614174002"
             }
         }
+
+
+class IssueListResponse(BaseModel):
+    """Schema for list of audit issues"""
+    items: List[IssueResponse]
+    total: int
 
 
 # Recommendation Schemas
@@ -467,18 +503,66 @@ class RecommendationResponse(BaseModel):
     """Schema for recommendation response"""
     id: UUID
     schedule_id: UUID
-    trigger_type: str
-    trigger_reference_id: Optional[UUID]
+    trigger_type: Optional[str] = None
+    trigger_reference_id: Optional[UUID] = None
     change_type: str
-    task_id: Optional[UUID]
-    task_details_before: Optional[Dict[str, Any]]
-    task_details_after: Optional[Dict[str, Any]]
-    change_description: Optional[str]
+    task_id: Optional[UUID] = None
+    task_details_before: Optional[Dict[str, Any]] = None
+    task_details_after: Optional[Dict[str, Any]] = None
+    change_description: Optional[str] = None
     is_applied: bool
-    applied_at: Optional[datetime]
-    applied_by: Optional[UUID]
+    applied_at: Optional[datetime] = None
+    applied_by: Optional[UUID] = None
     created_at: datetime
-    created_by: Optional[UUID]
+    created_by: Optional[UUID] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+
+
+class RecommendationListResponse(BaseModel):
+    """Schema for list of recommendations"""
+    items: List[RecommendationResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
+# Report Schemas
+
+class AuditReportStats(BaseModel):
+    """Schema for audit report statistics"""
+    compliance_score: float = Field(..., ge=0, le=100, description="Compliance score percentage")
+    total_mandatory: int = Field(..., ge=0, description="Total mandatory questions")
+    answered_mandatory: int = Field(..., ge=0, description="Answered mandatory questions")
+    total_optional: int = Field(..., ge=0, description="Total optional questions")
+    answered_optional: int = Field(..., ge=0, description="Answered optional questions")
+    issues_by_severity: Dict[str, int] = Field(..., description="Count of issues by severity")
+
+
+class AuditReportResponse(BaseModel):
+    """Schema for complete audit report"""
+    audit: AuditResponse
+    stats: AuditReportStats
+    issues: List[IssueResponse]
+    recommendations: List[RecommendationResponse]
+    
+    # Enriched Content
+    template_info: Optional[Dict[str, Any]] = None
+    crop_info: Optional[Dict[str, Any]] = None
+    organization_info: Optional[Dict[str, Any]] = None
+    flagged_responses: Optional[List[Dict[str, Any]]] = []
+    flagged_photos: Optional[List[Dict[str, Any]]] = []
+    
+    # Rich text fields
+    report_html: Optional[str] = ""
+    report_images: Optional[List[str]] = []
+    report_pdf_url: Optional[str] = None
+    report_updated_at: Optional[datetime] = None
+    
+    # Metadata
+    generated_at: Optional[str] = None
+    language: Optional[str] = "en"
+
+

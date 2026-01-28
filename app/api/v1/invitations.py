@@ -11,7 +11,8 @@ from app.core.database import get_db
 from app.core.auth import get_current_active_user
 from app.models.user import User
 from app.models.enums import InvitationStatus
-from app.schemas.invitation import InvitationResponse
+from app.schemas.invitation import InvitationResponse, AcceptInvitationRequest
+from app.schemas.response import BaseResponse
 from app.services.invitation_service import InvitationService
 
 router = APIRouter()
@@ -19,6 +20,7 @@ router = APIRouter()
 
 @router.get(
     "/me",
+    response_model=BaseResponse[dict],
     status_code=status.HTTP_200_OK,
     summary="Get my invitations",
     description="Get invitations for current user"
@@ -47,41 +49,58 @@ def get_my_invitations(
     )
     
     return {
-        "items": invitations,
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "total_pages": (total + limit - 1) // limit if total > 0 else 0
+        "success": True,
+        "message": "Invitations retrieved successfully",
+        "data": {
+            "items": invitations,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit if total > 0 else 0
+        }
     }
 
 
 @router.post(
     "/{invitation_id}/accept",
-    response_model=dict,
+    response_model=BaseResponse[dict],
     status_code=status.HTTP_200_OK,
     summary="Accept invitation",
-    description="Accept organization invitation"
+    description="Accept organization invitation or approve join request with optional role assignment"
 )
 def accept_invitation(
     invitation_id: UUID,
+    request: AcceptInvitationRequest = None,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    Accept organization invitation.
+    Accept organization invitation or approve join request.
     
     Creates organization membership and assigns role.
+    
+    **For Join Requests (Admin approving):**
+    - Can optionally specify role_id to override default role
+    - If no role_id provided, uses invitation's default role
+    
+    **For Standard Invitations (User accepting):**
+    - role_id parameter is ignored (uses invitation's role)
     
     Invitation must be PENDING and not expired.
     """
     service = InvitationService(db)
-    result = service.accept_invitation(invitation_id, current_user.id)
-    return result
+    role_id = request.role_id if request else None
+    result = service.accept_invitation(invitation_id, current_user.id, role_id=role_id)
+    return {
+        "success": True,
+        "message": "Invitation accepted successfully",
+        "data": result
+    }
 
 
 @router.post(
     "/{invitation_id}/reject",
-    response_model=dict,
+    response_model=BaseResponse[dict],
     status_code=status.HTTP_200_OK,
     summary="Reject invitation",
     description="Reject organization invitation"
@@ -100,4 +119,8 @@ def reject_invitation(
     """
     service = InvitationService(db)
     result = service.reject_invitation(invitation_id, current_user.id)
-    return result
+    return {
+        "success": True,
+        "message": "Invitation rejected successfully",
+        "data": result
+    }

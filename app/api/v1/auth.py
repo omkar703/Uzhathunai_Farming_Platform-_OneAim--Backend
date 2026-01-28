@@ -3,9 +3,10 @@ Authentication API routes for Uzhathunai v2.0.
 """
 from fastapi import APIRouter, Depends, status, Request
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from app.core.database import get_db
-from app.core.auth import get_current_active_user
+from app.core.auth import get_current_active_user, get_current_user_optional
 from app.models.user import User
 from app.schemas.auth import (
     UserRegister,
@@ -142,6 +143,8 @@ def refresh_token(
     }
 
 
+from fastapi import APIRouter, Depends, status, Request, Body
+# ...
 @router.post(
     "/logout",
     response_model=BaseResponse[MessageResponse],
@@ -150,22 +153,24 @@ def refresh_token(
     description="Revoke refresh token(s)"
 )
 def logout(
-    logout_data: UserLogout,
-    current_user: User = Depends(get_current_active_user),
+    logout_data: UserLogout = Body(default_factory=lambda: UserLogout(logout_all_devices=False)),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """
     Logout user by revoking refresh tokens.
     """
-    auth_service = AuthService(db)
+    message = "Logged out successfully"
     
-    auth_service.logout_user(
-        user_id=str(current_user.id),
-        logout_all=logout_data.logout_all_devices
-    )
-    
-    message = "Logged out from all devices" if logout_data.logout_all_devices else "Logged out successfully"
-    
+    if current_user:
+        auth_service = AuthService(db)
+        auth_service.logout_user(
+            user_id=str(current_user.id),
+            logout_all=logout_data.logout_all_devices
+        )
+        if logout_data.logout_all_devices:
+            message = "Logged out from all devices"
+            
     return {
         "success": True,
         "message": message,
@@ -195,11 +200,15 @@ def get_current_user_profile(
     # Check if freelancer
     is_freelancer = auth_service.is_freelancer(current_user.id)
     
+    user_data = current_user.to_dict()
+    # Alias profile_picture_url to profile_picture to match requested format
+    user_data["profile_picture"] = user_data.pop("profile_picture_url", "")
+    
     return {
         "success": True,
-        "message": "User profile retrieved",
+        "message": "User profile retrieved successfully",
         "data": {
-            "user": current_user.to_dict(),
+            **user_data,
             "roles": roles,
             "is_freelancer": is_freelancer
         }

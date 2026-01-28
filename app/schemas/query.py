@@ -40,7 +40,7 @@ class QueryCreate(BaseModel):
         return v
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "farming_organization_id": "123e4567-e89b-12d3-a456-426614174000",
                 "fsp_organization_id": "123e4567-e89b-12d3-a456-426614174001",
@@ -84,7 +84,7 @@ class QueryStatusUpdate(BaseModel):
     resolved_by: Optional[UUID] = None
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "status": "RESOLVED",
                 "resolved_by": "123e4567-e89b-12d3-a456-426614174000"
@@ -107,7 +107,7 @@ class QueryPhotoCreate(BaseModel):
         return v.strip()
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "file_url": "https://s3.amazonaws.com/bucket/query-photos/photo.jpg",
                 "file_key": "query-photos/photo.jpg",
@@ -129,7 +129,7 @@ class QueryPhotoResponse(BaseModel):
     uploaded_by: UUID
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class QueryResponseCreate(BaseModel):
@@ -146,7 +146,7 @@ class QueryResponseCreate(BaseModel):
         return v.strip()
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "response_text": "For white fly control, I recommend using neem oil spray. Apply in the evening at 5ml per liter of water. Repeat every 7 days for 3 weeks.",
                 "has_recommendation": True
@@ -166,7 +166,7 @@ class QueryResponseResponse(BaseModel):
     photos: List[QueryPhotoResponse] = []
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class ScheduleChangeProposal(BaseModel):
@@ -200,7 +200,7 @@ class ScheduleChangeProposal(BaseModel):
         return v
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "schedule_id": "123e4567-e89b-12d3-a456-426614174000",
                 "changes": [
@@ -249,7 +249,7 @@ class QueryResponse(BaseModel):
     photos: List[QueryPhotoResponse] = []
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class QueryListResponse(BaseModel):

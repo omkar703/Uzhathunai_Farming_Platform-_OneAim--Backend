@@ -219,6 +219,16 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             errors[field] = []
         errors[field].append(error["msg"])
     
+    # Log validation error
+    logger.warning(
+        "Validation error",
+        extra={
+            "request_id": getattr(request.state, "request_id", "unknown"),
+            "path": str(request.url.path),
+            "errors": errors
+        }
+    )
+    
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={

@@ -1,7 +1,7 @@
 """
 Templates API endpoints for Farm Audit Management in Uzhathunai v2.0.
 """
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -10,22 +10,24 @@ from app.core.auth import get_current_active_user
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.template import (
-    TemplateCreate,
-    TemplateUpdate,
+    TemplateCopy,
+    TemplateListResponse,
     TemplateResponse,
     TemplateDetail,
+    TemplateCreate,
+    TemplateUpdate,
     TemplateSectionAdd,
     TemplateSectionResponse,
     TemplateParameterAdd,
-    TemplateParameterResponse,
-    TemplateCopy
+    TemplateParameterResponse
 )
+from app.schemas.response import BaseResponse
 from app.services.template_service import TemplateService
 
 router = APIRouter()
 
 
-def get_user_organization_id(user: User, db: Session) -> UUID:
+def get_user_organization_id(user: User, db: Session) -> Optional[UUID]:
     """
     Helper function to get user's current organization ID.
     
@@ -34,27 +36,40 @@ def get_user_organization_id(user: User, db: Session) -> UUID:
         db: Database session
         
     Returns:
-        Organization ID or None for system users
+        Organization ID or None for system users (Super Admins)
         
     Raises:
         PermissionError: If user is not a member of any organization
     """
-    from app.models.organization import OrgMember
+    from app.models.organization import OrgMember, OrgMemberRole
+    from app.models.rbac import Role
     from app.models.enums import MemberStatus
     from app.core.exceptions import PermissionError
+    from typing import Optional
+
+    # Check for Super Admin role first
+    is_super_admin = db.query(OrgMemberRole).join(Role).filter(
+        OrgMemberRole.user_id == user.id,
+        Role.code == "SUPER_ADMIN"
+    ).first() is not None
     
-    # Check if user is system user (has no organization membership)
+    if is_super_admin:
+        return None
+
+    # Check for organization membership
     membership = db.query(OrgMember).filter(
         OrgMember.user_id == user.id,
         OrgMember.status == MemberStatus.ACTIVE
     ).first()
     
     if not membership:
-        # Could be a system user - return None
-        # TODO: Add proper system user check
-        return None
+        # TODO: Add proper system user check if other system roles exist
+        raise PermissionError(
+            message="User is not a member of any organization",
+            error_code="NO_ORGANIZATION_MEMBERSHIP"
+        )
     
-    return org_id
+    return membership.organization_id
 
 
 def has_consultancy_service(user: User, db: Session) -> bool:
@@ -91,7 +106,7 @@ def has_consultancy_service(user: User, db: Session) -> bool:
         return False
     
     subscription = db.query(Subscription).filter(
-        Subscription.organization_id == org_id,
+        Subscription.organization_id == membership.organization_id,
         Subscription.master_service_id == consultancy_service.id,
         Subscription.status == SubscriptionStatus.ACTIVE
     ).first()
@@ -99,11 +114,15 @@ def has_consultancy_service(user: User, db: Session) -> bool:
     return subscription is not None
 
 
+
+
+
+
 # ============================================================================
 # Template Endpoints
 # ============================================================================
 
-@router.get("", response_model=dict)
+@router.get("", response_model=BaseResponse[TemplateListResponse])
 def get_templates(
     crop_type_id: UUID = Query(None, description="Filter by crop type"),
     is_active: bool = Query(None, description="Filter by active status"),
@@ -123,8 +142,10 @@ def get_templates(
     Returns paginated list of templates (system and org-specific).
     System users see all templates.
     Organization users see system templates and their own.
+    Super Admins see all templates + FSP name.
     """
     service = TemplateService(db)
+    
     org_id = get_user_organization_id(current_user, db)
     
     templates, total = service.get_templates(
@@ -136,15 +157,19 @@ def get_templates(
     )
     
     return {
-        "items": templates,
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "total_pages": (total + limit - 1) // limit
+        "success": True,
+        "message": "Templates retrieved successfully",
+        "data": {
+            "items": templates,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit
+        }
     }
 
 
-@router.get("/{template_id}", response_model=TemplateResponse)
+@router.get("/{template_id}", response_model=BaseResponse[TemplateDetail])
 def get_template(
     template_id: UUID,
     current_user: User = Depends(get_current_active_user),
@@ -158,10 +183,16 @@ def get_template(
     Returns template with translations.
     """
     service = TemplateService(db)
-    return service.get_template(template_id)
+    template = service.get_template(template_id)
+    
+    return {
+        "success": True,
+        "message": "Template retrieved successfully",
+        "data": template
+    }
 
 
-@router.post("", response_model=TemplateResponse, status_code=201)
+@router.post("", response_model=BaseResponse[TemplateDetail], status_code=201)
 def create_template(
     data: TemplateCreate,
     current_user: User = Depends(get_current_active_user),
@@ -182,10 +213,16 @@ def create_template(
     
     # TODO: Add RBAC check for "Audit Template Management" permission
     
-    return service.create_template(data, current_user.id, org_id)
+    template = service.create_template(data, current_user.id, org_id)
+    
+    return {
+        "success": True,
+        "message": "Template created successfully",
+        "data": template
+    }
 
 
-@router.put("/{template_id}", response_model=TemplateResponse)
+@router.put("/{template_id}", response_model=BaseResponse[TemplateDetail])
 def update_template(
     template_id: UUID,
     data: TemplateUpdate,
@@ -206,7 +243,13 @@ def update_template(
     
     # TODO: Add RBAC check for "Audit Template Management" permission
     
-    return service.update_template(template_id, data, current_user.id, org_id)
+    template = service.update_template(template_id, data, current_user.id, org_id)
+    
+    return {
+        "success": True,
+        "message": "Template updated successfully",
+        "data": template
+    }
 
 
 @router.delete("/{template_id}", status_code=204)
@@ -237,7 +280,7 @@ def delete_template(
 # Template Section Management Endpoints
 # ============================================================================
 
-@router.post("/{template_id}/sections", response_model=TemplateSectionResponse, status_code=201)
+@router.post("/{template_id}/sections", response_model=BaseResponse[TemplateSectionResponse], status_code=201)
 def add_section_to_template(
     template_id: UUID,
     data: TemplateSectionAdd,
@@ -260,7 +303,13 @@ def add_section_to_template(
     
     # TODO: Add RBAC check for "Audit Template Management" permission
     
-    return service.add_section_to_template(template_id, data, org_id)
+    template_section = service.add_section_to_template(template_id, data, org_id)
+    
+    return {
+        "success": True,
+        "message": "Section added to template successfully",
+        "data": template_section
+    }
 
 
 @router.delete("/{template_id}/sections/{section_id}", status_code=204)
@@ -294,7 +343,7 @@ def remove_section_from_template(
 
 @router.post(
     "/{template_id}/sections/{section_id}/parameters",
-    response_model=TemplateParameterResponse,
+    response_model=BaseResponse[TemplateParameterResponse],
     status_code=201
 )
 def add_parameter_to_template_section(
@@ -321,12 +370,18 @@ def add_parameter_to_template_section(
     
     # TODO: Add RBAC check for "Audit Template Management" permission
     
-    return service.add_parameter_to_template_section(
+    template_parameter = service.add_parameter_to_template_section(
         template_id,
         section_id,
         data,
         org_id
     )
+    
+    return {
+        "success": True,
+        "message": "Parameter added to template section successfully",
+        "data": template_parameter
+    }
 
 
 @router.delete(
@@ -367,7 +422,7 @@ def remove_parameter_from_template_section(
 # Template Copy Endpoint
 # ============================================================================
 
-@router.post("/{template_id}/copy", response_model=TemplateResponse, status_code=201)
+@router.post("/{template_id}/copy", response_model=BaseResponse[TemplateDetail], status_code=201)
 def copy_template(
     template_id: UUID,
     data: TemplateCopy,
@@ -401,10 +456,16 @@ def copy_template(
     
     # TODO: Add RBAC check for "Audit Template Management" permission
     
-    return service.copy_template(
+    template = service.copy_template(
         template_id,
         data,
         current_user.id,
         org_id,
         has_consultancy
     )
+    
+    return {
+        "success": True,
+        "message": "Template copied successfully",
+        "data": template
+    }

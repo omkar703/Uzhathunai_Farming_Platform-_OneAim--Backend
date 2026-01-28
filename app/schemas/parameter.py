@@ -25,7 +25,7 @@ class ParameterTranslationResponse(ParameterTranslationBase):
     created_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Parameter schemas
@@ -137,11 +137,21 @@ class ParameterResponse(ParameterBase):
     updated_at: datetime
     created_by: Optional[UUID]
     updated_by: Optional[UUID]
+    name: Optional[str] = None
     translations: List[ParameterTranslationResponse] = []
     option_set_ids: List[UUID] = []
     
     class Config:
-        orm_mode = True
+        from_attributes = True
+
+
+class ParameterListResponse(BaseModel):
+    """Response schema for paginated parameters."""
+    items: List[ParameterResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
 
 
 class ParameterDetailResponse(ParameterResponse):

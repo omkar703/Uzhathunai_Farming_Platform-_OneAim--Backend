@@ -24,6 +24,8 @@ class ParameterType(str, enum.Enum):
     SINGLE_SELECT = "SINGLE_SELECT"
     MULTI_SELECT = "MULTI_SELECT"
     DATE = "DATE"
+    BOOLEAN = "BOOLEAN"
+    PHOTO = "PHOTO"
 
 
 class Parameter(Base):

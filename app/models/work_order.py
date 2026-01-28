@@ -6,7 +6,7 @@ Models match database schema exactly from 001_uzhathunai_ddl.sql:
 - WorkOrderScope (lines 1117-1135)
 """
 from datetime import datetime, date
-from sqlalchemy import Column, String, Text, Date, DateTime, Integer, Numeric, ForeignKey, Enum as SQLEnum, UniqueConstraint
+from sqlalchemy import Column, String, Text, Date, DateTime, Integer, Numeric, ForeignKey, Enum as SQLEnum, UniqueConstraint, Boolean
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -41,6 +41,9 @@ class WorkOrder(Base):
     status = Column(SQLEnum(WorkOrderStatus, name='work_order_status'), default=WorkOrderStatus.PENDING, index=True)
     terms_and_conditions = Column(Text)
     
+    # Access control
+    access_granted = Column(Boolean, default=True)
+    
     # Scope metadata (JSONB summary)
     scope_metadata = Column(JSONB)
     
@@ -64,6 +67,9 @@ class WorkOrder(Base):
     completed_at = Column(DateTime(timezone=True))
     cancelled_at = Column(DateTime(timezone=True))
     
+    # Assignment
+    assigned_to_user_id = Column(UUID(as_uuid=True), ForeignKey('users.id'))
+    
     # Relationships
     farming_organization = relationship("Organization", foreign_keys=[farming_organization_id])
     fsp_organization = relationship("Organization", foreign_keys=[fsp_organization_id])
@@ -73,9 +79,18 @@ class WorkOrder(Base):
     creator = relationship("User", foreign_keys=[created_by])
     updater = relationship("User", foreign_keys=[updated_by])
     acceptor = relationship("User", foreign_keys=[accepted_by])
+    assigned_member = relationship("User", foreign_keys=[assigned_to_user_id])
     
     def __repr__(self):
         return f"<WorkOrder(id={self.id}, number={self.work_order_number}, status={self.status})>"
+
+    @property
+    def service_snapshot(self):
+        """Return service snapshot from work order details."""
+        return {
+            "name": self.title,
+            "description": self.description
+        }
 
 
 class WorkOrderScope(Base):

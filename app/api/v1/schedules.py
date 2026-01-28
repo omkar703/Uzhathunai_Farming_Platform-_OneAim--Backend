@@ -24,7 +24,9 @@ from app.schemas.schedule import (
     ScheduleTaskStatusUpdate,
     ScheduleResponse,
     ScheduleWithTasksResponse,
-    ScheduleTaskResponse
+    ScheduleWithTasksResponse,
+    ScheduleTaskResponse,
+    PaginatedScheduleResponse
 )
 
 router = APIRouter(prefix="/schedules", tags=["Schedules"])
@@ -68,7 +70,9 @@ def create_schedule_from_scratch(
         crop_id=data.crop_id,
         name=data.name,
         description=data.description,
-        user=current_user
+        user=current_user,
+        start_date=data.start_date,
+        template_parameters=data.template_parameters
     )
     return schedule
 
@@ -95,7 +99,7 @@ def copy_schedule(
     return schedule
 
 
-@router.get("", response_model=dict)
+@router.get("", response_model=PaginatedScheduleResponse)
 def get_schedules(
     crop_id: Optional[UUID] = Query(None, description="Filter by crop ID"),
     page: int = Query(1, ge=1, description="Page number"),

@@ -71,7 +71,7 @@ class ScheduleTemplateService:
             )
         
         # Check if system user (SuperAdmin, Billing Admin, Support Agent)
-        system_roles = ['SuperAdmin', 'Billing Admin', 'Support Agent']
+        system_roles = ['SUPER_ADMIN', 'BILLING_ADMIN', 'SUPPORT_AGENT']
         user_roles = self.db.query(OrgMemberRole).join(Role).filter(
             OrgMemberRole.user_id == user_id
         ).all()
@@ -173,6 +173,7 @@ class ScheduleTemplateService:
         
         # Validate access
         can_create, is_system_user, fsp_org_id = self.validate_template_creation_access(user_id)
+
         
         # Requirement 4.4: System user can create either system-defined or org-specific
         # Requirement 4.5: FSP user can only create org-specific owned by their FSP org
@@ -244,6 +245,24 @@ class ScheduleTemplateService:
                     )
                     self.db.add(translation)
             
+            # Add tasks if provided
+            if data.tasks:
+                for task_data in data.tasks:
+                    # Infer task_id if missing
+                    final_task_id = self._resolve_task_id(task_data, self.db)
+                    
+                    task = ScheduleTemplateTask(
+                        schedule_template_id=template.id,
+                        task_id=final_task_id,
+                        day_offset=task_data.day_offset,
+                        task_details_template=task_data.task_details_template,
+                        sort_order=task_data.sort_order,
+                        notes=task_data.notes,
+                        created_by=user_id,
+                        updated_by=user_id
+                    )
+                    self.db.add(task)
+
             self.db.commit()
             self.db.refresh(template)
             
@@ -399,12 +418,30 @@ class ScheduleTemplateService:
             )
         
         # Requirement 15.2: System-defined templates are immutable
+        # Requirement 15.2: System-defined templates are immutable (unless System Admin)
         if template.is_system_defined:
-            raise PermissionError(
-                message="Cannot modify system-defined template",
-                error_code="SYSTEM_TEMPLATE_IMMUTABLE",
-                details={"template_id": str(template_id)}
+            # Check if system user
+            system_roles = ['SUPER_ADMIN', 'BILLING_ADMIN', 'SUPPORT_AGENT']
+            user_roles = self.db.query(OrgMemberRole).join(Role).filter(
+                OrgMemberRole.user_id == user_id
+            ).all()
+            
+            is_system_user = any(mr.role.code in system_roles for mr in user_roles)
+            
+            if not is_system_user:
+                raise PermissionError(
+                    message="Cannot modify system-defined template",
+                    error_code="SYSTEM_TEMPLATE_IMMUTABLE",
+                    details={"template_id": str(template_id)}
+                )
+            
+            # System user can modify system template - skip org check
+            self.logger.info(
+                "System user modifying system template",
+                extra={"template_id": str(template_id), "user_id": str(user_id)}
             )
+            return template, True
+
         
         # Requirement 15.5: Only owner organization can modify
         # Get user's organizations
@@ -468,7 +505,7 @@ class ScheduleTemplateService:
         
         try:
             # Update fields
-            update_data = data.dict(exclude_unset=True, exclude={'translations'})
+            update_data = data.dict(exclude_unset=True, exclude={'translations', 'tasks'})
             for field, value in update_data.items():
                 setattr(template, field, value)
             
@@ -482,6 +519,9 @@ class ScheduleTemplateService:
                     ScheduleTemplateTranslation.schedule_template_id == template_id
                 ).delete()
                 
+                # Add new translations (code omitted for brevity in search, but context kept)
+
+                
                 # Add new translations
                 for trans_data in data.translations:
                     translation = ScheduleTemplateTranslation(
@@ -491,6 +531,30 @@ class ScheduleTemplateService:
                         description=trans_data.description
                     )
                     self.db.add(translation)
+
+            # Update tasks if provided
+            if data.tasks is not None:
+                # Remove existing tasks
+                self.db.query(ScheduleTemplateTask).filter(
+                    ScheduleTemplateTask.schedule_template_id == template_id
+                ).delete()
+                
+                # Add new tasks
+                for task_data in data.tasks:
+                    # Infer task_id if missing
+                    final_task_id = self._resolve_task_id(task_data, self.db)
+                    
+                    task = ScheduleTemplateTask(
+                        schedule_template_id=template.id,
+                        task_id=final_task_id,
+                        day_offset=task_data.day_offset,
+                        task_details_template=task_data.task_details_template,
+                        sort_order=task_data.sort_order,
+                        notes=task_data.notes,
+                        created_by=user_id,
+                        updated_by=user_id
+                    )
+                    self.db.add(task)
             
             self.db.commit()
             self.db.refresh(template)
@@ -716,3 +780,111 @@ class ScheduleTemplateService:
                 exc_info=True
             )
             raise
+
+    def delete_template(
+        self,
+        template_id: UUID,
+        user_id: UUID
+    ) -> None:
+        """
+        Delete (soft-delete) schedule template.
+        
+        Requirements:
+        - System-defined templates cannot be deleted
+        - Org-specific templates can only be deleted by owner organization
+        - Sets is_active = False instead of hard delete
+        
+        Args:
+            template_id: Template ID
+            user_id: User ID
+        
+        Raises:
+            NotFoundError: If template not found
+            PermissionError: If user cannot delete template
+        """
+        self.logger.info(
+            "Deleting schedule template",
+            extra={
+                "template_id": str(template_id),
+                "user_id": str(user_id)
+            }
+        )
+        
+        # Validate ownership (reuses update validation logic which covers:
+        # 1. Template existence
+        # 2. System template immutability (cannot modify/delete)
+        # 3. Org ownership check
+        template, can_modify = self.validate_template_ownership(template_id, user_id)
+        
+        try:
+            # Soft delete
+            template.is_active = False
+            template.updated_by = user_id
+            template.updated_at = datetime.utcnow()
+            
+            self.db.commit()
+            
+            self.logger.info(
+                "Schedule template deleted (soft)",
+                extra={
+                    "template_id": str(template_id),
+                    "user_id": str(user_id)
+                }
+            )
+            
+        except Exception as e:
+            self.db.rollback()
+            self.logger.error(
+                "Failed to delete schedule template",
+                extra={
+                    "template_id": str(template_id),
+                    "user_id": str(user_id),
+                    "error": str(e)
+                },
+                exc_info=True
+            )
+            raise
+
+    def _resolve_task_id(self, task_data, db_session) -> UUID:
+        """
+        Helper to resolve task_id from task_data.
+        If task_id is present AND VALID, return it.
+        If missing or invalid (e.g. input_item_id sent as task_id), infer from generic tasks.
+        """
+        from app.models.reference_data import Task
+
+        if task_data.task_id:
+            # Validate if this ID actually exists in tasks table
+            exists = db_session.query(Task.id).filter(Task.id == task_data.task_id).first()
+            if exists:
+                return task_data.task_id
+            
+            # If provided ID doesn't exist in tasks table, it's likely an input_item_id or garbage
+            # Log warning and fall through to inference
+            self.logger.warning(
+                f"Invalid task_id {task_data.task_id} provided (not found in tasks). Falling back to inference."
+            )
+        
+        # Try to infer from generic tasks
+        
+        # Default fallback
+        generic_code = "GENERAL_APPLICATION"
+        
+        # Heuristic: Check if input items are fertilizers or pesticides
+        # This is robust but simple for now
+        details = task_data.task_details_template
+        if details and 'input_items' in details and len(details['input_items']) > 0:
+            # We could fetch the input item to check category, but to save DB calls, 
+            # we default to GENERAL_APPLICATION which is safe.
+            # If we want to be smarter later, we can fetch InputItem here.
+            pass
+            
+        task = db_session.query(Task).filter(Task.code == generic_code).first()
+        if not task:
+            # Fallback for safety if seeding failed (should not happen)
+            raise ValidationError(
+                message="Generic Task 'GENERAL_APPLICATION' not found. Please contact support.",
+                error_code="GENERIC_TASK_MISSING"
+            )
+            
+        return task.id

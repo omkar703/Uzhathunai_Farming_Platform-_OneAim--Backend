@@ -40,13 +40,16 @@ class Audit(Base):
     status = Column(SQLEnum(AuditStatus, name='audit_status'), default=AuditStatus.DRAFT, nullable=False)
     template_snapshot = Column(JSONB, nullable=True)
     audit_date = Column(Date, nullable=True)
-    sync_status = Column(SQLEnum(SyncStatus, name='sync_status'), default=SyncStatus.SYNCED, nullable=True)  # Added in 003
+    sync_status = Column(SQLEnum(SyncStatus, name='sync_status', values_callable=lambda x: [e.value for e in x]), default=SyncStatus.PENDING_SYNC, nullable=True)  # Added in 003
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     finalized_at = Column(TIMESTAMP(timezone=True), nullable=True)
     finalized_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     shared_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    assigned_to_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    analyst_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    has_report = Column(Boolean, default=False)
 
     # Relationships
     fsp_organization = relationship("Organization", foreign_keys=[fsp_organization_id])
@@ -56,10 +59,30 @@ class Audit(Base):
     template = relationship("Template", foreign_keys=[template_id])
     creator = relationship("User", foreign_keys=[created_by])
     finalizer = relationship("User", foreign_keys=[finalized_by])
+    assigned_to = relationship("User", foreign_keys=[assigned_to_user_id])
+    analyst = relationship("User", foreign_keys=[analyst_user_id])
     parameter_instances = relationship("AuditParameterInstance", back_populates="audit", cascade="all, delete-orphan")
+    report = relationship("AuditReport", back_populates="audit", uselist=False, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Audit(id={self.id}, audit_number={self.audit_number}, status={self.status})>"
+
+    @property
+    def fsp_organization_name(self) -> str:
+        """Get FSP organization name"""
+        return self.fsp_organization.name if self.fsp_organization else "Unknown FSP"
+
+    @property
+    def fsp_contact_info(self) -> dict:
+        """Get FSP contact info (Address, Email, Phone)"""
+        if not self.fsp_organization:
+            return {}
+            
+        return {
+            "address": self.fsp_organization.address,
+            "email": self.fsp_organization.contact_email,
+            "phone": self.fsp_organization.contact_phone
+        }
 
 
 class AuditParameterInstance(Base):

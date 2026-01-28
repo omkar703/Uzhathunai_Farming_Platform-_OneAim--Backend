@@ -15,12 +15,16 @@ from app.schemas.crop import (
     CropYieldResponse,
     YieldComparisonResponse
 )
+from app.schemas.response import BaseResponse
 from app.services.crop_yield_service import CropYieldService
+
+from app.core.organization_context import get_organization_id
+from app.models.enums import OrganizationType
 
 router = APIRouter()
 
 
-@router.post("/crops/{crop_id}/yields", response_model=CropYieldResponse, status_code=201)
+@router.post("/crops/{crop_id}/yields", response_model=BaseResponse[CropYieldResponse], status_code=201)
 def create_crop_yield(
     crop_id: UUID,
     data: CropYieldCreate,
@@ -44,15 +48,18 @@ def create_crop_yield(
     """
     service = CropYieldService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.create_yield(crop_id, org_id, data, current_user.id)
+    crop_yield = service.create_yield(crop_id, org_id, data, current_user.id)
+    return {
+        "success": True,
+        "message": "Crop yield created successfully",
+        "data": crop_yield
+    }
 
 
-@router.get("/crops/{crop_id}/yields", response_model=List[CropYieldResponse])
+@router.get("/crops/{crop_id}/yields", response_model=BaseResponse[list[CropYieldResponse]])
 def get_crop_yields(
     crop_id: UUID,
     current_user: User = Depends(get_current_active_user),
@@ -67,15 +74,18 @@ def get_crop_yields(
     """
     service = CropYieldService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.get_yields_by_crop(crop_id, org_id)
+    yields = service.get_yields_by_crop(crop_id, org_id)
+    return {
+        "success": True,
+        "message": "Crop yields retrieved successfully",
+        "data": yields
+    }
 
 
-@router.get("/{yield_id}", response_model=CropYieldResponse)
+@router.get("/{yield_id}", response_model=BaseResponse[CropYieldResponse])
 def get_crop_yield(
     yield_id: UUID,
     current_user: User = Depends(get_current_active_user),
@@ -90,15 +100,18 @@ def get_crop_yield(
     """
     service = CropYieldService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.get_yield_by_id(yield_id, org_id)
+    crop_yield = service.get_yield_by_id(yield_id, org_id)
+    return {
+        "success": True,
+        "message": "Crop yield retrieved successfully",
+        "data": crop_yield
+    }
 
 
-@router.put("/{yield_id}", response_model=CropYieldResponse)
+@router.put("/{yield_id}", response_model=BaseResponse[CropYieldResponse])
 def update_crop_yield(
     yield_id: UUID,
     data: CropYieldUpdate,
@@ -114,12 +127,15 @@ def update_crop_yield(
     """
     service = CropYieldService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.update_yield(yield_id, org_id, data, current_user.id)
+    crop_yield = service.update_yield(yield_id, org_id, data, current_user.id)
+    return {
+        "success": True,
+        "message": "Crop yield updated successfully",
+        "data": crop_yield
+    }
 
 
 @router.delete("/{yield_id}", status_code=204)
@@ -137,10 +153,8 @@ def delete_crop_yield(
     """
     service = CropYieldService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.delete_yield(yield_id, org_id, current_user.id)
     return None
@@ -167,20 +181,22 @@ def associate_photo_with_yield(
     """
     service = CropYieldService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.associate_photo(yield_id, photo_id, org_id)
-    return {"message": "Photo associated with yield successfully"}
+    return {
+        "success": True,
+        "message": "Photo associated with yield successfully",
+        "data": None
+    }
 
 
 # ============================================================================
 # Yield Comparison Endpoints
 # ============================================================================
 
-@router.get("/crops/{crop_id}/yield-comparison", response_model=YieldComparisonResponse)
+@router.get("/crops/{crop_id}/yield-comparison", response_model=BaseResponse[YieldComparisonResponse])
 def get_yield_comparison(
     crop_id: UUID,
     current_user: User = Depends(get_current_active_user),
@@ -202,9 +218,12 @@ def get_yield_comparison(
     """
     service = CropYieldService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.compare_planned_vs_actual(crop_id, org_id)
+    comparison = service.compare_planned_vs_actual(crop_id, org_id)
+    return {
+        "success": True,
+        "message": "Yield comparison retrieved successfully",
+        "data": comparison
+    }

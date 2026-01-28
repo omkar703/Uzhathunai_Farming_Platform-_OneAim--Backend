@@ -226,3 +226,25 @@ def delete_template_task(
         user_id=current_user.id
     )
     return None
+
+
+@router.delete("/{template_id}", status_code=204)
+def delete_schedule_template(
+    template_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete schedule template.
+    
+    Requirements:
+    - Soft deletes the template
+    - System-defined templates cannot be deleted
+    - Only owner organization can delete
+    """
+    service = ScheduleTemplateService(db)
+    service.delete_template(
+        template_id=template_id,
+        user_id=current_user.id
+    )
+    return None

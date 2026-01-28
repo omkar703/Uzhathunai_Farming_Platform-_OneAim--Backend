@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
+from typing import Optional
 
 from app.core.database import Base
 
@@ -42,6 +43,46 @@ class Template(Base):
     updater = relationship("User", foreign_keys=[updated_by])
     translations = relationship("TemplateTranslation", back_populates="template", cascade="all, delete-orphan")
     template_sections = relationship("TemplateSection", back_populates="template", cascade="all, delete-orphan")
+    
+    @property
+    def sections(self):
+        """Alias for template_sections to support Pydantic model"""
+        return self.template_sections
+
+    @property
+    def name(self) -> str:
+        """Get name from translations (prefer 'en', fallback to first)."""
+        if not self.translations:
+            return self.code
+        
+        # Try to find English translation
+        for t in self.translations:
+            if t.language_code == 'en':
+                return t.name
+        
+        # Fallback to first available
+        return self.translations[0].name
+
+    @property
+    def description(self) -> Optional[str]:
+        """Get description from translations (prefer 'en', fallback to first)."""
+        if not self.translations:
+            return None
+            
+        # Try to find English translation
+        for t in self.translations:
+            if t.language_code == 'en':
+                return t.description
+        
+        # Fallback to first available
+        return self.translations[0].description
+
+    @property
+    def owner_org_name(self) -> Optional[str]:
+        """Get owner organization name."""
+        if self.owner_organization:
+            return self.owner_organization.name
+        return None
 
     def __repr__(self):
         return f"<Template(id={self.id}, code={self.code}, version={self.version})>"
@@ -93,6 +134,30 @@ class TemplateSection(Base):
     section = relationship("Section")
     template_parameters = relationship("TemplateParameter", back_populates="template_section", cascade="all, delete-orphan")
 
+    @property
+    def parameters(self):
+        """Alias for template_parameters to support Pydantic model"""
+        return self.template_parameters
+
+    @property
+    def section_code(self) -> str:
+        """Get section code"""
+        return self.section.code if self.section else None
+
+    @property
+    def section_name(self) -> str:
+        """Get section name (prefer 'en', fallback to first)"""
+        if not self.section or not self.section.translations:
+            return self.section.code if self.section else None
+            
+        # Try to find English translation
+        for t in self.section.translations:
+            if t.language_code == 'en':
+                return t.name
+        
+        # Fallback to first available
+        return self.section.translations[0].name
+
     def __repr__(self):
         return f"<TemplateSection(id={self.id}, template_id={self.template_id}, section_id={self.section_id})>"
 
@@ -117,6 +182,21 @@ class TemplateParameter(Base):
     # Relationships
     template_section = relationship("TemplateSection", back_populates="template_parameters")
     parameter = relationship("Parameter")
+    
+    @property
+    def name(self) -> Optional[str]:
+        """Get parameter name (prefer 'en', fallback to first)."""
+        if not self.parameter or not self.parameter.translations:
+            # Fallback to code if no translations
+            return self.parameter.code if self.parameter else None
+            
+        # Try to find English translation
+        for t in self.parameter.translations:
+            if t.language_code == 'en':
+                return t.name
+        
+        # Fallback to first available
+        return self.parameter.translations[0].name
 
     def __repr__(self):
         return f"<TemplateParameter(id={self.id}, template_section_id={self.template_section_id}, parameter_id={self.parameter_id})>"

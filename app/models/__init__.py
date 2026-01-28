@@ -76,7 +76,8 @@ from app.models.option_set import OptionSet, Option, OptionTranslation
 from app.models.parameter import Parameter, ParameterTranslation, ParameterOptionSetMap, ParameterType
 from app.models.section import Section, SectionTranslation
 from app.models.template import Template, TemplateTranslation, TemplateSection, TemplateParameter
-from app.models.audit import Audit, AuditParameterInstance
+from app.models.audit import Audit, AuditParameterInstance, AuditResponse, AuditResponsePhoto, AuditIssue, AuditReview, AuditReviewPhoto
+from app.models.audit_report import AuditReport
 
 __all__ = [
     # User models
@@ -196,4 +197,10 @@ __all__ = [
     # Audit models
     "Audit",
     "AuditParameterInstance",
+    "AuditResponse",
+    "AuditResponsePhoto",
+    "AuditIssue",
+    "AuditReview",
+    "AuditReviewPhoto",
+    "AuditReport",
 ]

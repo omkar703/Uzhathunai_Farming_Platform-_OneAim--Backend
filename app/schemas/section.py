@@ -22,7 +22,7 @@ class SectionTranslationResponse(SectionTranslationBase):
     created_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Section schemas
@@ -64,7 +64,16 @@ class SectionResponse(SectionBase):
     description: Optional[str] = None  # Translated description for requested language
     
     class Config:
-        orm_mode = True
+        from_attributes = True
+
+
+class SectionListResponse(BaseModel):
+    """Response schema for paginated sections."""
+    items: List[SectionResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
 
 
 class SectionDetailResponse(SectionResponse):
@@ -72,4 +81,4 @@ class SectionDetailResponse(SectionResponse):
     translations: List[SectionTranslationResponse] = []
     
     class Config:
-        orm_mode = True
+        from_attributes = True

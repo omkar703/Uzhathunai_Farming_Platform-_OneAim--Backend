@@ -28,12 +28,17 @@ class WorkflowService:
 
     # Define valid status transitions
     VALID_TRANSITIONS = {
-        AuditStatus.DRAFT: [AuditStatus.IN_PROGRESS],
-        AuditStatus.IN_PROGRESS: [AuditStatus.DRAFT, AuditStatus.SUBMITTED],
-        AuditStatus.SUBMITTED: [AuditStatus.IN_PROGRESS, AuditStatus.REVIEWED],
-        AuditStatus.REVIEWED: [AuditStatus.SUBMITTED, AuditStatus.FINALIZED],
-        AuditStatus.FINALIZED: [AuditStatus.SHARED],
-        AuditStatus.SHARED: []  # Terminal state
+        AuditStatus.PENDING: [AuditStatus.IN_PROGRESS, AuditStatus.COMPLETED],
+        AuditStatus.DRAFT: [AuditStatus.PENDING, AuditStatus.IN_PROGRESS, AuditStatus.COMPLETED],
+        AuditStatus.IN_PROGRESS: [AuditStatus.DRAFT, AuditStatus.COMPLETED, AuditStatus.SUBMITTED],
+        AuditStatus.COMPLETED: [AuditStatus.IN_PROGRESS, AuditStatus.SUBMITTED_TO_FARMER, AuditStatus.SUBMITTED, AuditStatus.SUBMITTED_FOR_REVIEW],
+        AuditStatus.SUBMITTED: [AuditStatus.IN_PROGRESS, AuditStatus.REVIEWED, AuditStatus.SUBMITTED_FOR_REVIEW, AuditStatus.COMPLETED],
+        AuditStatus.SUBMITTED_FOR_REVIEW: [AuditStatus.IN_PROGRESS, AuditStatus.IN_ANALYSIS, AuditStatus.REVIEWED, AuditStatus.COMPLETED],
+        AuditStatus.IN_ANALYSIS: [AuditStatus.SUBMITTED_FOR_REVIEW, AuditStatus.REVIEWED, AuditStatus.FINALIZED],
+        AuditStatus.REVIEWED: [AuditStatus.SUBMITTED, AuditStatus.SUBMITTED_FOR_REVIEW, AuditStatus.FINALIZED, AuditStatus.COMPLETED],
+        AuditStatus.FINALIZED: [AuditStatus.SHARED, AuditStatus.SUBMITTED_TO_FARMER],
+        AuditStatus.SHARED: [],  # Terminal state
+        AuditStatus.SUBMITTED_TO_FARMER: []  # Terminal
     }
 
     def __init__(self, db: Session):
@@ -96,8 +101,8 @@ class WorkflowService:
                 }
             )
 
-        # Validate requirements for SUBMITTED status
-        if to_status == AuditStatus.SUBMITTED:
+        # Validate requirements for SUBMITTED patterns and COMPLETED
+        if to_status in [AuditStatus.SUBMITTED, AuditStatus.SUBMITTED_FOR_REVIEW, AuditStatus.COMPLETED, AuditStatus.SUBMITTED_TO_FARMER]:
             self._validate_submission_requirements(audit)
 
         # Update status
@@ -295,7 +300,7 @@ class WorkflowService:
             }
 
         # Check current status allows submission
-        if audit.status not in [AuditStatus.DRAFT, AuditStatus.IN_PROGRESS]:
+        if audit.status not in [AuditStatus.DRAFT, AuditStatus.PENDING, AuditStatus.IN_PROGRESS]:
             return {
                 "ready": False,
                 "error": f"Cannot submit audit with status {audit.status.value}"

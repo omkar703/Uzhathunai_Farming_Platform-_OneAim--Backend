@@ -7,8 +7,13 @@ Supports CRUD operations, template copying, and permission validation.
 
 from typing import List, Tuple, Optional, Dict, Any
 from uuid import UUID
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+
+# ... (existing imports) ...
+
+
 from sqlalchemy import and_, or_
+from sqlalchemy.exc import IntegrityError
 
 from app.core.logging import get_logger
 from app.core.exceptions import NotFoundError, ValidationError, PermissionError, ConflictError
@@ -106,6 +111,52 @@ class TemplateService:
             )
             self.db.add(translation)
 
+        self.db.flush()
+
+        # Handle nested sections and parameters
+        for section_data in data.sections:
+            # Check if section exists
+            section = self.db.query(Section).filter(Section.id == section_data.section_id).first()
+            if not section:
+                raise NotFoundError(
+                    message=f"Section {section_data.section_id} not found",
+                    error_code="SECTION_NOT_FOUND",
+                    details={"section_id": str(section_data.section_id)}
+                )
+
+            # Create template section
+            template_section = TemplateSection(
+                template_id=template.id,
+                section_id=section_data.section_id,
+                sort_order=section_data.sort_order
+            )
+            self.db.add(template_section)
+            self.db.flush()
+
+            # Handle parameters for this section
+            for param_data in section_data.parameters:
+                # Check if parameter exists
+                parameter = self.db.query(Parameter).filter(Parameter.id == param_data.parameter_id).first()
+                if not parameter:
+                    raise NotFoundError(
+                        message=f"Parameter {param_data.parameter_id} not found",
+                        error_code="PARAMETER_NOT_FOUND",
+                        details={"parameter_id": str(param_data.parameter_id)}
+                    )
+
+                # Create parameter snapshot
+                parameter_snapshot = self.snapshot_service.create_parameter_snapshot(param_data.parameter_id)
+
+                # Create template parameter
+                template_parameter = TemplateParameter(
+                    template_section_id=template_section.id,
+                    parameter_id=param_data.parameter_id,
+                    is_required=param_data.is_required,
+                    sort_order=param_data.sort_order,
+                    parameter_snapshot=parameter_snapshot
+                )
+                self.db.add(template_parameter)
+
         self.db.commit()
         self.db.refresh(template)
 
@@ -141,7 +192,10 @@ class TemplateService:
         Returns:
             Tuple of (templates list, total count)
         """
-        query = self.db.query(Template)
+        query = self.db.query(Template).options(
+            joinedload(Template.owner_organization),
+            joinedload(Template.translations)
+        )
 
         # Filter by visibility
         if organization_id is None:
@@ -185,7 +239,17 @@ class TemplateService:
         Raises:
             NotFoundError: If template not found
         """
-        template = self.db.query(Template).filter(Template.id == template_id).first()
+        # Eager load sections and parameters for full details
+        template = self.db.query(Template).options(
+            joinedload(Template.template_sections)
+            .joinedload(TemplateSection.section),
+            joinedload(Template.template_sections)
+            .joinedload(TemplateSection.template_parameters)
+            .joinedload(TemplateParameter.parameter)
+            .joinedload(Parameter.translations),
+            joinedload(Template.translations)
+        ).filter(Template.id == template_id).first()
+        
         if not template:
             raise NotFoundError(
                 message=f"Template {template_id} not found",
@@ -307,13 +371,21 @@ class TemplateService:
         # Validate permissions
         self._validate_modification_permission(template, organization_id)
 
-        self.db.delete(template)
-        self.db.commit()
+        try:
+            self.db.delete(template)
+            self.db.commit()
 
-        logger.info(
-            "Template deleted",
-            extra={"template_id": str(template_id)}
-        )
+            logger.info(
+                "Template deleted",
+                extra={"template_id": str(template_id)}
+            )
+        except IntegrityError:
+            self.db.rollback()
+            raise ConflictError(
+                message="Cannot delete template because it is being used by existing audits.",
+                error_code="TEMPLATE_IN_USE",
+                details={"template_id": str(template_id)}
+            )
 
     def add_section_to_template(
         self,
@@ -509,7 +581,9 @@ class TemplateService:
             )
 
         # Check if parameter exists
-        parameter = self.db.query(Parameter).filter(Parameter.id == data.parameter_id).first()
+        parameter = self.db.query(Parameter).options(
+            joinedload(Parameter.translations)
+        ).filter(Parameter.id == data.parameter_id).first()
         if not parameter:
             raise NotFoundError(
                 message=f"Parameter {data.parameter_id} not found",
@@ -538,7 +612,7 @@ class TemplateService:
         # Create template parameter
         template_parameter = TemplateParameter(
             template_section_id=template_section.id,
-            parameter_id=data.parameter_id,
+            parameter=parameter,
             is_required=data.is_required,
             sort_order=data.sort_order,
             parameter_snapshot=parameter_snapshot

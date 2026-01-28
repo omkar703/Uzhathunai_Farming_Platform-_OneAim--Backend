@@ -25,6 +25,12 @@ class InviteMemberRequest(BaseModel):
         return v
 
 
+class SendInvitationRequest(BaseModel):
+    """Schema for sending invitation by user ID and role code."""
+    userId: UUID
+    role: str
+
+
 class InvitationResponse(BaseModel):
     """Schema for invitation response."""
     id: str
@@ -89,3 +95,18 @@ class RejectInvitationResponse(BaseModel):
         if v is not None:
             return str(v)
         return v
+
+
+class JoinRequestResponse(BaseModel):
+    """Schema for join request response."""
+    id: str
+    inviter_name: str
+    role: str
+    status: str
+    created_at: Optional[str] = None
+    user_id: str
+
+
+class AcceptInvitationRequest(BaseModel):
+    """Schema for accepting invitation with optional role override."""
+    role_id: Optional[UUID] = None

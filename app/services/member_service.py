@@ -112,6 +112,12 @@ class MemberService:
                 for mr in member_roles
             ]
             
+            # Get primary role for top-level display
+            primary_role = next((mr for mr in member_roles if mr.is_primary), member_roles[0] if member_roles else None)
+            
+            # Check if user is owner (has OWNER or FSP_OWNER role)
+            is_owner = any(mr.role.code in ['OWNER', 'FSP_OWNER'] for mr in member_roles)
+            
             members_data.append({
                 "id": str(member.id),
                 "user_id": str(member.user_id),
@@ -120,7 +126,11 @@ class MemberService:
                 "roles": roles_data,
                 "joined_at": member.joined_at.isoformat() if member.joined_at else None,
                 "user_name": user.full_name if user.full_name else None,
-                "user_email": user.email
+                "user_email": user.email,
+                # Top-level role info for easy frontend access
+                "role_id": str(primary_role.role_id) if primary_role else None,
+                "role_name": primary_role.role.code if primary_role else None,
+                "is_owner": is_owner
             })
         
         self.logger.info(
@@ -595,3 +605,224 @@ class MemberService:
             "user_name": user.full_name if user.full_name else None,
             "user_email": user.email
         }
+    
+    def get_member_details(
+        self,
+        org_id: UUID,
+        user_id: UUID,
+        current_user_id: UUID
+    ) -> dict:
+        """
+        Get enhanced member details including profile information.
+        
+        Args:
+            org_id: Organization ID
+            user_id: User ID to get details for
+            current_user_id: Current user ID (for access control)
+        
+        Returns:
+            Enhanced member details dictionary
+        
+        Raises:
+            PermissionError: If current user is not a member
+            NotFoundError: If member not found
+        """
+        self.logger.info(
+            "Fetching member details",
+            extra={
+                "org_id": str(org_id),
+                "user_id": str(user_id),
+                "current_user_id": str(current_user_id)
+            }
+        )
+        
+        # Check if current user is a member
+        self._check_membership(org_id, current_user_id)
+        
+        # Get member and user data
+        result = self.db.query(OrgMember, User).join(
+            User, OrgMember.user_id == User.id
+        ).filter(
+            OrgMember.organization_id == org_id,
+            OrgMember.user_id == user_id
+        ).first()
+        
+        if not result:
+            raise NotFoundError(
+                message="Member not found",
+                error_code="MEMBER_NOT_FOUND",
+                details={"user_id": str(user_id)}
+            )
+        
+        member, user = result
+        
+        # Get all roles for this member
+        member_roles = self.db.query(OrgMemberRole).join(Role).filter(
+            OrgMemberRole.user_id == user_id,
+            OrgMemberRole.organization_id == org_id
+        ).all()
+        
+        # Get primary role
+        primary_role = next((mr for mr in member_roles if mr.is_primary), member_roles[0] if member_roles else None)
+        
+        # Check if user is owner
+        is_owner = any(mr.role.code in ['OWNER', 'FSP_OWNER'] for mr in member_roles)
+        
+        details = {
+            "id": str(member.id),
+            "user_id": str(user.id),
+            "user_name": user.full_name or "",
+            "user_email": user.email,
+            "phone": user.phone or "",
+            "role_id": str(primary_role.role_id) if primary_role else "",
+            "role_name": primary_role.role.code if primary_role else "",
+            "is_owner": is_owner,
+            "status": member.status.value,
+            "joined_at": member.joined_at.isoformat() if member.joined_at else "",
+            "bio": user.bio or "",
+            "address": user.address or "",
+            "profile_picture": user.profile_picture_url or ""
+        }
+        
+        self.logger.info(
+            "Member details fetched successfully",
+            extra={
+                "org_id": str(org_id),
+                "user_id": str(user_id)
+            }
+        )
+        
+        return details
+    
+    def get_member_work_history(
+        self,
+        org_id: UUID,
+        user_id: UUID,
+        current_user_id: UUID,
+        limit: int = 50,
+        offset: int = 0
+    ) -> Tuple[List[dict], int]:
+        """
+        Get member work history (activities within the organization).
+        
+        For now, returns mock data. In the future, this can pull from:
+        - Work orders
+        - Audits
+        - Schedule tasks
+        - Other activity logs
+        
+        Args:
+            org_id: Organization ID
+            user_id: User ID to get history for
+            current_user_id: Current user ID (for access control)
+            limit: Maximum items to return
+            offset: Offset for pagination
+        
+        Returns:
+            Tuple of (work history items, total count)
+        
+        Raises:
+            PermissionError: If current user is not a member
+            NotFoundError: If member not found
+        """
+        self.logger.info(
+            "Fetching member work history",
+            extra={
+                "org_id": str(org_id),
+                "user_id": str(user_id),
+                "current_user_id": str(current_user_id),
+                "limit": limit,
+                "offset": offset
+            }
+        )
+        
+        # Check if current user is a member
+        self._check_membership(org_id, current_user_id)
+        
+        # Check if target user is a member
+        member = self.db.query(OrgMember).filter(
+            OrgMember.organization_id == org_id,
+            OrgMember.user_id == user_id
+        ).first()
+        
+        if not member:
+            raise NotFoundError(
+                message="Member not found",
+                error_code="MEMBER_NOT_FOUND",
+                details={"user_id": str(user_id)}
+            )
+        
+        # Mock work history data
+        # In the future, replace this with actual queries to work_orders, audits, etc.
+        import uuid
+        from datetime import datetime, timedelta
+        
+        mock_activities = [
+            {
+                "id": str(uuid.uuid4()),
+                "activity_type": "TASK_COMPLETED",
+                "title": "Completed soil testing",
+                "description": "Tested 5 acres of land in North Field",
+                "date": (datetime.utcnow() - timedelta(days=3)).isoformat() + "Z",
+                "location": "North Field",
+                "metadata": {
+                    "task_id": str(uuid.uuid4()),
+                    "farm_id": str(uuid.uuid4())
+                }
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "activity_type": "FARM_VISIT",
+                "title": "Farm inspection",
+                "description": "Routine inspection of irrigation system",
+                "date": (datetime.utcnow() - timedelta(days=5)).isoformat() + "Z",
+                "location": "Green Valley Farm",
+                "metadata": None
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "activity_type": "CONSULTATION",
+                "title": "Pest management consultation",
+                "description": "Advised on organic pest control methods",
+                "date": (datetime.utcnow() - timedelta(days=8)).isoformat() + "Z",
+                "location": None,
+                "metadata": None
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "activity_type": "REPORT_SUBMITTED",
+                "title": "Monthly crop report",
+                "description": "Submitted comprehensive crop health report",
+                "date": (datetime.utcnow() - timedelta(days=10)).isoformat() + "Z",
+                "location": "Office",
+                "metadata": {
+                    "report_id": str(uuid.uuid4())
+                }
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "activity_type": "TRAINING",
+                "title": "Conducted drip irrigation training",
+                "description": "Trained 10 workers on new drip irrigation system",
+                "date": (datetime.utcnow() - timedelta(days=15)).isoformat() + "Z",
+                "location": "Training Center",
+                "metadata": None
+            }
+        ]
+        
+        total = len(mock_activities)
+        
+        # Apply pagination
+        paginated_items = mock_activities[offset:offset + limit]
+        
+        self.logger.info(
+            "Member work history fetched",
+            extra={
+                "org_id": str(org_id),
+                "user_id": str(user_id),
+                "count": len(paginated_items),
+                "total": total
+            }
+        )
+        
+        return paginated_items, total

@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_active_user
 from app.core.database import get_db
 from app.models.user import User
-from app.models.enums import TransactionType
+from app.core.organization_context import get_organization_id
+from app.models.enums import OrganizationType, TransactionType
 from app.schemas.finance_category import (
     FinanceCategoryCreate,
     FinanceCategoryUpdate,
@@ -39,10 +40,8 @@ def get_finance_categories(
     """
     service = FinanceCategoryService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     return service.get_categories(org_id, transaction_type, language, include_system)
 
@@ -65,10 +64,8 @@ def create_finance_category(
     """
     service = FinanceCategoryService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     # TODO: Add RBAC check for admin role
     
@@ -90,10 +87,8 @@ def update_finance_category(
     """
     service = FinanceCategoryService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     # TODO: Add RBAC check for admin role
     
@@ -114,10 +109,8 @@ def delete_finance_category(
     """
     service = FinanceCategoryService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     # TODO: Add RBAC check for admin role
     

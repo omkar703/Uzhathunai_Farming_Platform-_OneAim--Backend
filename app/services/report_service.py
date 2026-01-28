@@ -106,45 +106,65 @@ class ReportService:
                 details={"audit_id": str(audit_id)}
             )
 
-        # Build report
+        # Get basic report details and stats from AuditService
+        from app.services.audit_service import AuditService
+        audit_service = AuditService(self.db)
+        base_data = audit_service.get_audit_report(audit_id)
+
+        # Flatten issues from dictionary to list
+        issues_dict = self._get_issues_by_severity(audit)
+        flattened_issues = []
+        for severity in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+            flattened_issues.extend(issues_dict.get(severity, []))
+
+        # Build report matching AuditReportResponse schema
         report = {
-            "audit_details": self._get_audit_details(audit, language),
+            "audit": self._get_audit_details(audit, language),
+            "stats": base_data["stats"],
+            "issues": flattened_issues,
+            "recommendations": self._get_recommendations(audit),
+            # Metadata and Enriched Content
             "template_info": self._get_template_info(audit, language),
             "crop_info": self._get_crop_info(audit),
             "organization_info": self._get_organization_info(audit),
             "flagged_responses": self._get_flagged_responses(audit, language),
             "flagged_photos": self._get_flagged_photos(audit),
-            "issues": self._get_issues_by_severity(audit),
-            "recommendations": self._get_recommendations(audit),
             "generated_at": audit.created_at.isoformat() if audit.created_at else None,
             "language": language
         }
 
         logger.info(
-            "Audit report generated",
+            "Audit report generated and standardized",
             extra={
                 "audit_id": str(audit_id),
                 "language": language,
                 "flagged_responses_count": len(report["flagged_responses"]),
                 "flagged_photos_count": len(report["flagged_photos"]),
-                "issues_count": sum(len(issues) for issues in report["issues"].values()),
+                "issues_count": len(report["issues"]),
                 "recommendations_count": len(report["recommendations"])
             }
         )
 
         return report
 
+
     def _get_audit_details(self, audit: Audit, language: str) -> Dict[str, Any]:
         """Get audit details."""
         return {
-            "audit_id": str(audit.id),
+            "id": audit.id,
             "audit_number": audit.audit_number,
             "name": audit.name,
-            "audit_date": audit.audit_date.isoformat() if audit.audit_date else None,
-            "status": audit.status.value,
-            "created_at": audit.created_at.isoformat() if audit.created_at else None,
-            "finalized_at": audit.finalized_at.isoformat() if audit.finalized_at else None,
-            "shared_at": audit.shared_at.isoformat() if audit.shared_at else None
+            "audit_date": audit.audit_date,
+            "status": audit.status,
+            "created_at": audit.created_at,
+            "updated_at": audit.updated_at,
+            "finalized_at": audit.finalized_at,
+            "shared_at": audit.shared_at,
+            "fsp_organization_id": audit.fsp_organization_id,
+            "farming_organization_id": audit.farming_organization_id,
+            "crop_id": audit.crop_id,
+            "template_id": audit.template_id,
+            "created_by": audit.created_by
         }
 
     def _get_template_info(self, audit: Audit, language: str) -> Dict[str, Any]:
@@ -172,13 +192,22 @@ class ReportService:
         if not crop:
             return {}
         
+        variety_name = None
+        if crop.crop_variety:
+            # Try to get English translation or any available
+            trans = next((t for t in crop.crop_variety.translations if t.language_code == "en"), None)
+            if not trans and crop.crop_variety.translations:
+                trans = crop.crop_variety.translations[0]
+            variety_name = trans.name if trans else None
+
         return {
             "crop_id": str(crop.id),
             "crop_name": crop.name,
-            "variety": crop.variety,
-            "planting_date": crop.planting_date.isoformat() if crop.planting_date else None,
-            "expected_harvest_date": crop.expected_harvest_date.isoformat() if crop.expected_harvest_date else None
+            "variety": variety_name,
+            "planting_date": crop.planted_date.isoformat() if crop.planted_date else None,
+            "expected_harvest_date": crop.completed_date.isoformat() if crop.completed_date else None
         }
+
 
     def _get_organization_info(self, audit: Audit) -> Dict[str, Any]:
         """Get FSP and farming organization information."""
@@ -247,14 +276,17 @@ class ReportService:
                     )
                     
                     flagged_responses.append({
-                        "response_id": str(response.id),
+                        "id": response.id,
+                        "audit_id": response.audit_id,
+                        "audit_parameter_instance_id": response.audit_parameter_instance_id,
                         "parameter_name": param_name,
                         "parameter_code": parameter_snapshot.get("code", ""),
                         "parameter_type": parameter_snapshot.get("parameter_type", ""),
                         "response_value": response_value,
                         "notes": response.notes,
-                        "reviewed_at": review.reviewed_at.isoformat() if review.reviewed_at else None,
-                        "reviewed_by": str(review.reviewed_by) if review.reviewed_by else None
+                        "created_at": response.created_at,
+                        "updated_at": response.updated_at,
+                        "created_by": response.created_by
                     })
         
         return flagged_responses
@@ -283,12 +315,16 @@ class ReportService:
             return ""
         
         elif param_type in ["SINGLE_SELECT", "MULTI_SELECT"]:
-            if response_or_review.response_option_ids:
+            # Handle naming mismatch between AuditResponse and AuditReview
+            option_ids = getattr(response_or_review, "response_option_ids", None) or \
+                         getattr(response_or_review, "response_options", None)
+            
+            if option_ids:
                 # Get option display text from snapshot
                 options = parameter_snapshot.get("options", [])
                 option_texts = []
                 
-                for option_id in response_or_review.response_option_ids:
+                for option_id in option_ids:
                     for option in options:
                         if option.get("option_id") == str(option_id):
                             option_translations = option.get("translations", {})
@@ -301,6 +337,7 @@ class ReportService:
                 
                 return ", ".join(option_texts)
             return ""
+
         
         return ""
 
@@ -312,17 +349,11 @@ class ReportService:
         """
         flagged_photos = []
         
-        # Get all responses for this audit
-        responses = self.db.query(AuditResponse).filter(
-            AuditResponse.audit_id == audit.id
-        ).all()
-        
-        response_ids = [r.id for r in responses]
-        
-        # Get all photos for these responses
+        # Get all photos for this audit
         photos = self.db.query(AuditResponsePhoto).filter(
-            AuditResponsePhoto.audit_response_id.in_(response_ids)
+            AuditResponsePhoto.audit_id == audit.id
         ).all()
+
         
         for photo in photos:
             # Check if photo has a review that is flagged
@@ -333,12 +364,14 @@ class ReportService:
             
             if review_photo:
                 flagged_photos.append({
-                    "photo_id": str(photo.id),
+                    "id": photo.id,
+                    "audit_id": photo.audit_id,
+                    "audit_response_id": photo.audit_response_id,
                     "file_url": photo.file_url,
                     "file_key": photo.file_key,
                     "caption": review_photo.caption or photo.caption,
-                    "uploaded_at": photo.uploaded_at.isoformat() if photo.uploaded_at else None,
-                    "reviewed_at": review_photo.reviewed_at.isoformat() if review_photo.reviewed_at else None
+                    "uploaded_at": photo.uploaded_at,
+                    "uploaded_by": photo.uploaded_by
                 })
         
         return flagged_photos
@@ -363,12 +396,13 @@ class ReportService:
         
         for issue in issues:
             issue_data = {
-                "issue_id": str(issue.id),
+                "id": issue.id,
+                "audit_id": issue.audit_id,
                 "title": issue.title,
                 "description": issue.description,
-                "severity": issue.severity.value,
-                "created_at": issue.created_at.isoformat() if issue.created_at else None,
-                "created_by": str(issue.created_by) if issue.created_by else None
+                "severity": issue.severity,
+                "created_at": issue.created_at,
+                "created_by": issue.created_by
             }
             
             issues_by_severity[issue.severity.value].append(issue_data)
@@ -390,16 +424,25 @@ class ReportService:
         
         recommendation_list = []
         for rec in recommendations:
+            # Extract basic info from task_details_after if available
+            title = rec.change_type
+            description = rec.change_description
+            
             recommendation_list.append({
-                "recommendation_id": str(rec.id),
-                "title": rec.title,
-                "description": rec.description,
-                "priority": rec.priority,
-                "due_date": rec.due_date.isoformat() if rec.due_date else None,
+                "id": rec.id,
+                "schedule_id": rec.schedule_id,
+                "change_type": rec.change_type,
+                "task_id": rec.task_id,
+                "task_details_before": rec.task_details_before,
+                "task_details_after": rec.task_details_after,
+                "change_description": rec.change_description,
                 "is_applied": rec.is_applied,
-                "created_at": rec.created_at.isoformat() if rec.created_at else None,
-                "created_by": str(rec.created_by) if rec.created_by else None
+                "applied_at": rec.applied_at,
+                "applied_by": rec.applied_by,
+                "created_at": rec.created_at,
+                "created_by": rec.created_by
             })
         
         return recommendation_list
+
 

@@ -9,19 +9,21 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_active_user
 from app.core.database import get_db
 from app.models.user import User
-from app.models.enums import CropLifecycle
+from app.core.organization_context import get_organization_id
+from app.models.enums import OrganizationType, CropLifecycle
 from app.schemas.crop import (
     CropCreate,
     CropUpdate,
     CropResponse,
     UpdateLifecycleRequest
 )
+from app.schemas.response import BaseResponse
 from app.services.crop_service import CropService
 
 router = APIRouter()
 
 
-@router.post("/", response_model=CropResponse, status_code=201)
+@router.post("/", response_model=BaseResponse[CropResponse], status_code=201)
 def create_crop(
     data: CropCreate,
     current_user: User = Depends(get_current_active_user),
@@ -40,15 +42,18 @@ def create_crop(
     """
     service = CropService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.create_crop(data.plot_id, org_id, data, current_user.id)
+    crop = service.create_crop(data.plot_id, org_id, data, current_user.id)
+    return {
+        "success": True,
+        "message": "Crop created successfully",
+        "data": crop
+    }
 
 
-@router.get("/", response_model=dict)
+@router.get("/", response_model=BaseResponse[dict])
 def get_crops(
     plot_id: Optional[UUID] = Query(None, description="Filter by plot ID"),
     lifecycle: Optional[CropLifecycle] = Query(None, description="Filter by lifecycle stage"),
@@ -69,10 +74,8 @@ def get_crops(
     """
     service = CropService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     # Build filters
     filters = {}
@@ -84,15 +87,19 @@ def get_crops(
     crops, total = service.get_crops(org_id, filters, page, limit)
     
     return {
-        "items": crops,
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "total_pages": (total + limit - 1) // limit
+        "success": True,
+        "message": "Crops retrieved successfully",
+        "data": {
+            "items": crops,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit
+        }
     }
 
 
-@router.get("/{crop_id}", response_model=CropResponse)
+@router.get("/{crop_id}", response_model=BaseResponse[CropResponse])
 def get_crop(
     crop_id: UUID,
     current_user: User = Depends(get_current_active_user),
@@ -107,15 +114,18 @@ def get_crop(
     """
     service = CropService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.get_crop_by_id(crop_id, org_id)
+    crop = service.get_crop_by_id(crop_id, org_id)
+    return {
+        "success": True,
+        "message": "Crop retrieved successfully",
+        "data": crop
+    }
 
 
-@router.put("/{crop_id}", response_model=CropResponse)
+@router.put("/{crop_id}", response_model=BaseResponse[CropResponse])
 def update_crop(
     crop_id: UUID,
     data: CropUpdate,
@@ -131,12 +141,15 @@ def update_crop(
     """
     service = CropService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.update_crop(crop_id, org_id, data, current_user.id)
+    crop = service.update_crop(crop_id, org_id, data, current_user.id)
+    return {
+        "success": True,
+        "message": "Crop updated successfully",
+        "data": crop
+    }
 
 
 @router.delete("/{crop_id}", status_code=204)
@@ -154,10 +167,8 @@ def delete_crop(
     """
     service = CropService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.delete_crop(crop_id, org_id, current_user.id)
     return None
@@ -167,7 +178,7 @@ def delete_crop(
 # Crop Lifecycle Endpoints
 # ============================================================================
 
-@router.put("/{crop_id}/lifecycle", response_model=CropResponse)
+@router.put("/{crop_id}/lifecycle", response_model=BaseResponse[CropResponse])
 def update_crop_lifecycle(
     crop_id: UUID,
     data: UpdateLifecycleRequest,
@@ -193,15 +204,18 @@ def update_crop_lifecycle(
     """
     service = CropService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.update_lifecycle(crop_id, org_id, data.new_lifecycle, current_user.id)
+    crop = service.update_lifecycle(crop_id, org_id, data.new_lifecycle, current_user.id)
+    return {
+        "success": True,
+        "message": f"Crop lifecycle updated to {data.new_lifecycle}",
+        "data": crop
+    }
 
 
-@router.get("/plots/{plot_id}/crop-history", response_model=List[CropResponse])
+@router.get("/plots/{plot_id}/crop-history", response_model=BaseResponse[list[CropResponse]])
 def get_crop_history(
     plot_id: UUID,
     current_user: User = Depends(get_current_active_user),
@@ -216,9 +230,12 @@ def get_crop_history(
     """
     service = CropService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.get_crop_history(plot_id, org_id)
+    crops = service.get_crop_history(plot_id, org_id)
+    return {
+        "success": True,
+        "message": "Crop history retrieved successfully",
+        "data": crops
+    }

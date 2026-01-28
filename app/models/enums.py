@@ -134,9 +134,14 @@ class QueryStatus(str, PyEnum):
 
 class AuditStatus(str, PyEnum):
     """Audit status enum - matches DDL line 26"""
+    PENDING = "PENDING"
     DRAFT = "DRAFT"
     IN_PROGRESS = "IN_PROGRESS"
     SUBMITTED = "SUBMITTED"
+    COMPLETED = "COMPLETED"
+    SUBMITTED_TO_FARMER = "SUBMITTED_TO_FARMER"
+    SUBMITTED_FOR_REVIEW = "SUBMITTED_FOR_REVIEW"
+    IN_ANALYSIS = "IN_ANALYSIS"
     REVIEWED = "REVIEWED"
     FINALIZED = "FINALIZED"
     SHARED = "SHARED"
@@ -161,3 +166,25 @@ class PhotoSourceType(str, PyEnum):
     """Photo source type enum - tracks origin of the photo"""
     LIVE_CAPTURE = "LIVE_CAPTURE"
     MANUAL_UPLOAD = "MANUAL_UPLOAD"
+
+
+class ChatContextType(str, PyEnum):
+    """Chat context type enum - matches 008_chat_module.sql"""
+    WORK_ORDER = "WORK_ORDER"
+    ORGANIZATION = "ORGANIZATION"
+    SUPPORT = "SUPPORT"
+
+
+class MessageType(str, PyEnum):
+    """Message type enum - matches 008_chat_module.sql"""
+    TEXT = "TEXT"
+    IMAGE = "IMAGE"
+    FILE = "FILE"
+    SYSTEM = "SYSTEM"
+
+
+class InputItemType(str, PyEnum):
+    """Input item type enum - critical for icons/filtering"""
+    FERTILIZER = "FERTILIZER"
+    PESTICIDE = "PESTICIDE"
+    OTHER = "OTHER"

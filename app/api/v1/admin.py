@@ -65,6 +65,7 @@ async def approve_organization(
 
 @router.get(
     "/organizations",
+    response_model=BaseResponse[dict],
     status_code=status.HTTP_200_OK,
     summary="List organizations",
     description="List all organizations with filtering and pagination. Only accessible by Super Admins."

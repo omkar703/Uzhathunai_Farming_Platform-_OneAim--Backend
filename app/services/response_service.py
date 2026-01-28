@@ -10,7 +10,8 @@ from typing import Optional, List, Dict, Any
 from decimal import Decimal
 from datetime import date
 
-from app.models.audit import AuditResponse, AuditParameterInstance, Audit
+from app.models.audit import AuditResponse, AuditParameterInstance, Audit, AuditResponsePhoto
+from app.models.enums import PhotoSourceType
 from app.schemas.audit import ResponseSubmit, ResponseUpdate
 from app.core.exceptions import NotFoundError, ValidationError, PermissionError
 from app.core.logging import get_logger
@@ -69,8 +70,13 @@ class ResponseService:
                 details={"audit_id": str(audit_id)}
             )
         
-        # Check audit status - cannot modify finalized or shared audits
-        if audit.status in ['FINALIZED', 'SHARED']:
+        # Check audit status - cannot modify once submitted or completed
+        immutable_statuses = [
+            'SUBMITTED', 'COMPLETED', 'SUBMITTED_TO_FARMER', 
+            'SUBMITTED_FOR_REVIEW', 'IN_ANALYSIS', 'REVIEWED', 
+            'FINALIZED', 'SHARED'
+        ]
+        if audit.status in immutable_statuses:
             raise PermissionError(
                 message=f"Cannot submit responses to {audit.status.lower()} audit",
                 error_code="AUDIT_IMMUTABLE",
@@ -132,6 +138,11 @@ class ResponseService:
                     "action": "update"
                 }
             )
+
+            # Process evidence URLs if provided (Link generic uploads)
+            if data.evidence_urls:
+                self._process_evidence_urls(audit_id, existing_response.id, data.evidence_urls, user_id)
+                self.db.commit() # Commit changes to photos
             
             return existing_response
         
@@ -148,6 +159,12 @@ class ResponseService:
         )
         
         self.db.add(response)
+        self.db.flush()  # ID is needed for photos
+
+        # Process evidence URLs if provided
+        if data.evidence_urls:
+            self._process_evidence_urls(audit_id, response.id, data.evidence_urls, user_id)
+        
         self.db.commit()
         self.db.refresh(response)
         
@@ -245,6 +262,10 @@ class ResponseService:
             response.response_options = data.response_options
         if data.notes is not None:
             response.notes = data.notes
+
+        # Process evidence URLs if provided (Append/Link)
+        if data.evidence_urls:
+             self._process_evidence_urls(audit_id, response.id, data.evidence_urls, user_id)
         
         self.db.commit()
         self.db.refresh(response)
@@ -279,6 +300,40 @@ class ResponseService:
         ).order_by(AuditResponse.created_at).all()
         
         return responses
+    
+    def _process_evidence_urls(self, audit_id: UUID, response_id: UUID, urls: List[str], user_id: UUID):
+        """
+        Link existing evidence photos or create new records if not found.
+        """
+        for url in urls:
+            # Check if this URL already exists as an unlinked photo for this audit
+            existing_photo = self.db.query(AuditResponsePhoto).filter(
+                AuditResponsePhoto.audit_id == audit_id,
+                AuditResponsePhoto.file_url == url,
+                AuditResponsePhoto.audit_response_id.is_(None)
+            ).first()
+            
+            if existing_photo:
+                # Link existing photo
+                existing_photo.audit_response_id = response_id
+                # Update uploader if needed? No, keep original uploader.
+            else:
+                # Fallback: Create new record (legacy behavior or external URL)
+                # Check if it's already linked to THIS response to avoid duplicates
+                already_linked = self.db.query(AuditResponsePhoto).filter(
+                    AuditResponsePhoto.audit_response_id == response_id,
+                    AuditResponsePhoto.file_url == url
+                ).first()
+                
+                if not already_linked:
+                    photo = AuditResponsePhoto(
+                        audit_id=audit_id,
+                        audit_response_id=response_id,
+                        file_url=url,
+                        source_type=PhotoSourceType.MANUAL_UPLOAD,
+                        uploaded_by=user_id
+                    )
+                    self.db.add(photo)
     
     def _validate_response(
         self,

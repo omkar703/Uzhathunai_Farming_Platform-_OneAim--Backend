@@ -31,8 +31,10 @@ class OptionSetService:
         self,
         org_id: UUID,
         language: str = "en",
-        include_system: bool = True
-    ) -> List[OptionSetResponse]:
+        include_system: bool = True,
+        page: int = 1,
+        limit: int = 20
+    ) -> tuple[List[OptionSetResponse], int]:
         """
         Get option sets (system-defined and org-specific).
         
@@ -70,19 +72,27 @@ class OptionSetService:
                 )
             )
         
-        option_sets = query.order_by(OptionSet.code).all()
+        # Get total count
+        total = query.count()
+        
+        # Apply pagination
+        offset = (page - 1) * limit
+        option_sets = query.order_by(OptionSet.code).offset(offset).limit(limit).all()
         
         logger.info(
             "Retrieved option sets",
             extra={
                 "org_id": str(org_id),
                 "count": len(option_sets),
+                "total": total,
                 "include_system": include_system,
-                "language": language
+                "language": language,
+                "page": page,
+                "limit": limit
             }
         )
         
-        return [self._to_option_set_response(os, language) for os in option_sets]
+        return [self._to_option_set_response(os, language) for os in option_sets], total
     
     def get_option_set(
         self,

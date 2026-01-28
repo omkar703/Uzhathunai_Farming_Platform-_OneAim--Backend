@@ -101,7 +101,19 @@ def get_current_active_user(
     from app.services.auth_service import AuthService
     
     # Real implementation of Organization Approval Check
-    if current_user.email == "superadmin@example.com":
+    # Super admins bypass the organization approval check
+    from app.models.rbac import Role
+    from app.models.organization import OrgMemberRole
+    
+    is_super_admin = (
+        db.query(OrgMemberRole)
+        .join(Role)
+        .filter(OrgMemberRole.user_id == current_user.id)
+        .filter(Role.code == "SUPER_ADMIN")
+        .first() is not None
+    )
+    
+    if is_super_admin:
         return current_user
         
     # Lazy load or query memberships
@@ -109,23 +121,23 @@ def get_current_active_user(
     from app.models.organization import OrgMember, Organization, MemberStatus
     from app.models.enums import OrganizationStatus
     
-    # Check if user has ANY active membership in an ACTIVE organization
+    # Check if user has ANY active membership in an ACTIVE or IN_PROGRESS organization
     stmt = (
         db.query(OrgMember)
         .join(Organization)
         .filter(OrgMember.user_id == current_user.id)
         .filter(OrgMember.status == MemberStatus.ACTIVE)
-        .filter(Organization.status == OrganizationStatus.ACTIVE)
+        .filter(Organization.status.in_([OrganizationStatus.ACTIVE, OrganizationStatus.IN_PROGRESS]))
     )
     approved_membership = stmt.first()
     
-    # Let's see if they are in a non-active Org
+    # Let's see if they are in a truly unapproved Org (NOT_STARTED)
     stmt_unapproved = (
         db.query(OrgMember)
         .join(Organization)
         .filter(OrgMember.user_id == current_user.id)
         .filter(OrgMember.status == MemberStatus.ACTIVE)
-        .filter(Organization.status.in_([OrganizationStatus.NOT_STARTED, OrganizationStatus.IN_PROGRESS, OrganizationStatus.INACTIVE, OrganizationStatus.SUSPENDED]))
+        .filter(Organization.status == OrganizationStatus.NOT_STARTED)
     )
     unapproved_membership = stmt_unapproved.first()
     

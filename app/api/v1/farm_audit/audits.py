@@ -39,9 +39,14 @@ from app.schemas.audit import (
     IssueUpdate,
     IssueResponse,
     IssueSeverityEnum,
+    IssueListResponse,
     RecommendationCreate,
     RecommendationUpdate,
-    RecommendationResponse
+    RecommendationResponse,
+    RecommendationListResponse,
+    RecommendationListResponse,
+    AuditAssignRequest,
+    AuditReportResponse
 )
 from app.services.audit_service import AuditService
 from app.services.response_service import ResponseService
@@ -51,6 +56,7 @@ from app.services.review_service import ReviewService
 from app.services.remote_audit_service import RemoteAuditService
 from app.services.finalization_service import FinalizationService
 from app.services.sharing_service import SharingService
+from app.schemas.response import BaseResponse
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -58,7 +64,7 @@ logger = get_logger(__name__)
 
 @router.post(
     "/audits",
-    response_model=AuditResponse,
+    response_model=BaseResponse[AuditResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Create a new audit",
     description="Create a new audit from a template for a specific crop"
@@ -98,23 +104,32 @@ def create_audit(
         name=data.name,
         user_id=current_user.id,
         work_order_id=data.work_order_id,
-        audit_date=data.audit_date
+        audit_date=data.audit_date,
+        assigned_to=data.assigned_to
     )
 
-    return audit
+    return {
+        "success": True,
+        "message": "Audit created successfully",
+        "data": audit
+    }
 
 
 @router.get(
     "/audits",
-    response_model=AuditListResponse,
+    response_model=BaseResponse[AuditListResponse],
     summary="Get audits with filtering and pagination",
     description="Retrieve audits with optional filtering by organization, crop, and status"
 )
 def get_audits(
-    fsp_organization_id: Optional[UUID] = Query(None, description="Filter by FSP organization"),
+    fsp_organization_id: Optional[UUID] = Query(None, alias="fsp_id", description="Filter by FSP organization"),
+    fsp_org_id: Optional[UUID] = Query(None, alias="fsp_organization_id", description="Filter by FSP organization"),
     farming_organization_id: Optional[UUID] = Query(None, description="Filter by farming organization"),
     crop_id: Optional[UUID] = Query(None, description="Filter by crop"),
+    work_order_id: Optional[UUID] = Query(None, description="Filter by work order"),
     status: Optional[str] = Query(None, description="Filter by status"),
+    assigned_to: Optional[str] = Query(None, description="Filter by assigned user (UUID or 'ME')"),
+    created_by: Optional[str] = Query(None, description="Filter by creator (UUID or 'ME')"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: User = Depends(get_current_active_user),
@@ -131,12 +146,17 @@ def get_audits(
     
     **Requirements: 7.1**
     """
+    
+    actual_fsp_id = fsp_organization_id or fsp_org_id
+    
     logger.info(
         "Getting audits via API",
         extra={
             "user_id": str(current_user.id),
-            "fsp_organization_id": str(fsp_organization_id) if fsp_organization_id else None,
+            "fsp_organization_id": str(actual_fsp_id) if actual_fsp_id else None,
             "farming_organization_id": str(farming_organization_id) if farming_organization_id else None,
+            "work_order_id": str(work_order_id) if work_order_id else None,
+            "assigned_to": assigned_to,
             "page": page,
             "limit": limit
         }
@@ -152,26 +172,33 @@ def get_audits(
 
     service = AuditService(db)
     audits, total = service.get_audits(
-        fsp_organization_id=fsp_organization_id,
+        fsp_organization_id=actual_fsp_id,
         farming_organization_id=farming_organization_id,
         crop_id=crop_id,
+        work_order_id=work_order_id,
         status=status_enum,
+        assigned_to_user_id=current_user.id if assigned_to == 'ME' else UUID(assigned_to) if assigned_to else None,
+        created_by_user_id=current_user.id if created_by == 'ME' else UUID(created_by) if created_by else None,
         page=page,
         limit=limit
     )
 
     return {
-        "items": audits,
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "total_pages": (total + limit - 1) // limit
+        "success": True,
+        "message": "Audits retrieved successfully",
+        "data": {
+            "items": audits,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit if total > 0 else 0
+        }
     }
 
 
 @router.get(
     "/audits/{audit_id}",
-    response_model=AuditResponse,
+    response_model=BaseResponse[AuditResponse],
     summary="Get audit by ID",
     description="Retrieve a specific audit by its ID"
 )
@@ -198,12 +225,46 @@ def get_audit(
     service = AuditService(db)
     audit = service.get_audit(audit_id)
 
-    return audit
+    return {
+        "success": True,
+        "message": "Audit details retrieved successfully",
+        "data": audit
+    }
+
+
+@router.delete(
+    "/audits/{audit_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete audit",
+    description="Delete an audit"
+)
+def delete_audit(
+    audit_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete an audit.
+    
+    **Requirements: 7.1**
+    """
+    logger.info(
+        "Deleting audit via API",
+        extra={
+            "user_id": str(current_user.id),
+            "audit_id": str(audit_id)
+        }
+    )
+
+    service = AuditService(db)
+    service.delete_audit(audit_id, current_user.id)
+
+    return None
 
 
 @router.get(
     "/audits/{audit_id}/structure",
-    response_model=AuditStructureResponse,
+    response_model=BaseResponse[AuditStructureResponse],
     summary="Get audit structure",
     description="Get complete audit structure with sections and parameters from snapshots"
 )
@@ -237,14 +298,71 @@ def get_audit_structure(
     service = AuditService(db)
     structure = service.get_audit_structure(audit_id)
 
-    return structure
+    return {
+        "success": True,
+        "message": "Audit structure retrieved successfully",
+        "data": structure
+    }
+
+
+# Removed duplicate get_audit_report (moved to reports.py)
+
+
+
+@router.put(
+    "/audits/{audit_id}/assign",
+    response_model=BaseResponse[AuditResponse],
+    summary="Assign audit",
+    description="Assign an audit to a field officer or analyst"
+)
+def assign_audit(
+    audit_id: UUID,
+    data: AuditAssignRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Assign an audit to a field officer or analyst.
+    
+    This endpoint allows:
+    - Assigning to a field officer (assigned_to)
+    - Assigning to an analyst (analyst_id)
+    - Changing workflow state based on assignment (handled by service)
+    
+    **Requirements: 18.2**
+    """
+    logger.info(
+        "Assigning audit via API",
+        extra={
+            "user_id": str(current_user.id),
+            "audit_id": str(audit_id),
+            "assigned_to": str(data.assigned_to) if data.assigned_to else None,
+            "analyst_id": str(data.analyst_id) if data.analyst_id else None
+        }
+    )
+
+    from app.services.audit_service import AuditService
+    service = AuditService(db)
+    
+    audit = service.assign_audit(
+        audit_id=audit_id,
+        assigned_to=data.assigned_to,
+        analyst_id=data.analyst_id,
+        user_id=current_user.id
+    )
+
+    return {
+        "success": True,
+        "message": "Audit assigned successfully",
+        "data": audit
+    }
 
 
 # Response Submission Endpoints
 
 @router.post(
     "/audits/{audit_id}/responses",
-    response_model=AuditResponseDetail,
+    response_model=BaseResponse[AuditResponseDetail],
     status_code=status.HTTP_201_CREATED,
     summary="Submit audit response",
     description="Submit or update a response to an audit parameter"
@@ -282,12 +400,16 @@ def submit_response(
         user_id=current_user.id
     )
 
-    return response
+    return {
+        "success": True,
+        "message": "Response submitted successfully",
+        "data": response
+    }
 
 
 @router.put(
     "/audits/{audit_id}/responses/{response_id}",
-    response_model=AuditResponseDetail,
+    response_model=BaseResponse[AuditResponseDetail],
     summary="Update audit response",
     description="Update an existing audit response"
 )
@@ -325,12 +447,16 @@ def update_response(
         user_id=current_user.id
     )
 
-    return response
+    return {
+        "success": True,
+        "message": "Response updated successfully",
+        "data": response
+    }
 
 
 @router.get(
     "/audits/{audit_id}/responses",
-    response_model=AuditResponseListResponse,
+    response_model=BaseResponse[AuditResponseListResponse],
     summary="Get audit responses",
     description="Get all responses for an audit"
 )
@@ -358,8 +484,12 @@ def get_audit_responses(
     responses = service.get_audit_responses(audit_id)
 
     return {
-        "items": responses,
-        "total": len(responses)
+        "success": True,
+        "message": "Audit responses retrieved successfully",
+        "data": {
+            "items": responses,
+            "total": len(responses)
+        }
     }
 
 
@@ -367,7 +497,7 @@ def get_audit_responses(
 
 @router.post(
     "/audits/{audit_id}/responses/{response_id}/photos",
-    response_model=PhotoUploadResponse,
+    response_model=BaseResponse[PhotoUploadResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Upload photo for audit response",
     description="Upload a photo for an audit response with validation and compression"
@@ -418,12 +548,68 @@ async def upload_photo(
         user_id=current_user.id
     )
 
-    return photo
+    return {
+        "success": True,
+        "message": "Photo uploaded successfully",
+        "data": photo
+    }
+
+
+@router.post(
+    "/audits/{audit_id}/evidence",
+    response_model=BaseResponse[PhotoUploadResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload evidence photo",
+    description="Upload a photo as evidence for an audit (not yet linked to a response)"
+)
+async def upload_evidence(
+    audit_id: UUID,
+    file: UploadFile = File(..., description="Photo file (JPEG/PNG, max 10MB)"),
+    caption: Optional[str] = Form(None, description="Optional photo caption"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload a photo as evidence.
+    
+    This endpoint allows uploading photos before submitting the response.
+    The returned URL can be included in the response submission.
+    
+    **Requirements: 9.1**
+    """
+    logger.info(
+        "Uploading evidence via API",
+        extra={
+            "user_id": str(current_user.id),
+            "audit_id": str(audit_id),
+            "filename": file.filename
+        }
+    )
+
+    service = PhotoService(db)
+    
+    # Read file data
+    file_data = await file.read()
+    
+    # Upload photo
+    photo = service.upload_evidence(
+        audit_id=audit_id,
+        file_data=io.BytesIO(file_data),
+        filename=file.filename,
+        caption=caption,
+        user_id=current_user.id
+    )
+
+    return {
+        "success": True,
+        "message": "Evidence uploaded successfully",
+        "data": photo
+    }
 
 
 @router.get(
     "/audits/{audit_id}/responses/{response_id}/photos",
-    response_model=PhotoListResponse,
+    response_model=BaseResponse[PhotoListResponse],
     summary="Get photos for audit response",
     description="Get all photos for an audit response"
 )
@@ -453,8 +639,12 @@ def get_photos(
     photos = service.get_photos(audit_id, response_id)
 
     return {
-        "items": photos,
-        "total": len(photos)
+        "success": True,
+        "message": "Photos retrieved successfully",
+        "data": {
+            "items": photos,
+            "total": len(photos)
+        }
     }
 
 
@@ -547,8 +737,7 @@ async def capture_snapshot(
         "data": {
             "audit_id": str(audit_id),
             "session_id": str(session_id)
-        },
-        "error_code": None
+        }
     }
 
 
@@ -556,7 +745,7 @@ async def capture_snapshot(
 
 @router.post(
     "/audits/{audit_id}/transition",
-    response_model=AuditResponse,
+    response_model=BaseResponse[AuditResponse],
     summary="Transition audit status",
     description="Transition audit to a new status with validation"
 )
@@ -612,12 +801,88 @@ def transition_audit_status(
         user_id=current_user.id
     )
 
-    return audit
+    return {
+        "success": True,
+        "message": f"Audit transitioned to {target_status.value} successfully",
+        "data": audit
+    }
+
+
+@router.post(
+    "/audits/{audit_id}/complete",
+    response_model=BaseResponse[AuditResponse],
+    summary="Complete audit (Internal)",
+    description="Mark audit as internally completed and ready for review"
+)
+def complete_audit(
+    audit_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Mark audit as internally completed.
+    
+    Transitions status to COMPLETED.
+    Requires all required parameters to be answered.
+    """
+    logger.info(
+        "Completing audit",
+        extra={"audit_id": str(audit_id), "user_id": str(current_user.id)}
+    )
+    
+    service = WorkflowService(db)
+    audit = service.transition_status(
+        audit_id=audit_id,
+        to_status=AuditStatus.COMPLETED,
+        user_id=current_user.id
+    )
+    
+    return {
+        "success": True,
+        "message": "Audit completed successfully",
+        "data": audit
+    }
+
+
+@router.post(
+    "/audits/{audit_id}/publish",
+    response_model=BaseResponse[AuditResponse],
+    summary="Publish audit to farmer",
+    description="Finalize and submit audit to farmer"
+)
+def publish_audit(
+    audit_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Publish audit to farmer.
+    
+    Transitions status to SUBMITTED_TO_FARMER.
+    Should be called after review (or directly if no review needed).
+    """
+    logger.info(
+        "Publishing audit",
+        extra={"audit_id": str(audit_id), "user_id": str(current_user.id)}
+    )
+    
+    service = WorkflowService(db)
+    audit = service.transition_status(
+        audit_id=audit_id,
+        to_status=AuditStatus.SUBMITTED_TO_FARMER,
+        user_id=current_user.id
+    )
+    
+    return {
+        "success": True,
+        "message": "Audit published to farmer successfully",
+        "data": audit
+    }
 
 
 @router.get(
     "/audits/{audit_id}/validation",
-    response_model=ValidationResult,
+    response_model=BaseResponse[ValidationResult],
     summary="Validate audit submission readiness",
     description="Check if audit is ready for submission without transitioning"
 )
@@ -649,14 +914,18 @@ def validate_audit_submission(
     service = WorkflowService(db)
     result = service.validate_submission_readiness(audit_id)
 
-    return result
+    return {
+        "success": True,
+        "message": "Validation complete",
+        "data": result
+    }
 
 
 # Review Endpoints
 
 @router.post(
     "/audits/{audit_id}/reviews",
-    response_model=ReviewResponse,
+    response_model=BaseResponse[ReviewResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Create or update audit review",
     description="Create or update a review for an audit response"
@@ -698,12 +967,16 @@ def create_review(
         is_flagged_for_report=data.is_flagged_for_report
     )
 
-    return review
+    return {
+        "success": True,
+        "message": "Review created successfully",
+        "data": review
+    }
 
 
 @router.put(
     "/audits/{audit_id}/reviews/{review_id}",
-    response_model=ReviewResponse,
+    response_model=BaseResponse[ReviewResponse],
     summary="Update audit review",
     description="Update an existing audit review"
 )
@@ -767,7 +1040,7 @@ def update_review(
 
 @router.post(
     "/audits/{audit_id}/reviews/{review_id}/flag",
-    response_model=ReviewResponse,
+    response_model=BaseResponse[ReviewResponse],
     summary="Flag response for report",
     description="Flag or unflag an audit response for report inclusion"
 )
@@ -822,7 +1095,7 @@ def flag_response(
 
 @router.post(
     "/audits/{audit_id}/photos/{photo_id}/annotate",
-    response_model=PhotoAnnotationResponse,
+    response_model=BaseResponse[PhotoAnnotationResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Annotate photo",
     description="Add or update annotation for an audit response photo"
@@ -861,7 +1134,11 @@ def annotate_photo(
         is_flagged_for_report=data.is_flagged_for_report
     )
 
-    return annotation
+    return {
+        "success": True,
+        "message": "Photo annotation updated successfully",
+        "data": annotation
+    }
 
 
 # ============================================
@@ -870,7 +1147,7 @@ def annotate_photo(
 
 @router.post(
     "/audits/{audit_id}/issues",
-    response_model=IssueResponse,
+    response_model=BaseResponse[IssueResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Create audit issue",
     description="Create a new issue for an audit (SUBMITTED, REVIEWED, or FINALIZED status)"
@@ -910,12 +1187,16 @@ def create_issue(
         user_id=current_user.id
     )
     
-    return issue
+    return {
+        "success": True,
+        "message": "Issue created successfully",
+        "data": issue
+    }
 
 
 @router.get(
     "/audits/{audit_id}/issues",
-    response_model=List[IssueResponse],
+    response_model=BaseResponse[IssueListResponse],
     summary="Get audit issues",
     description="Get all issues for an audit, optionally filtered by severity"
 )
@@ -951,12 +1232,19 @@ def get_audit_issues(
         severity=IssueSeverity[severity.value] if severity else None
     )
     
-    return issues
+    return {
+        "success": True,
+        "message": "Audit issues retrieved successfully",
+        "data": {
+            "items": issues,
+            "total": len(issues)
+        }
+    }
 
 
 @router.put(
     "/audits/{audit_id}/issues/{issue_id}",
-    response_model=IssueResponse,
+    response_model=BaseResponse[IssueResponse],
     summary="Update audit issue",
     description="Update an existing audit issue"
 )
@@ -994,7 +1282,11 @@ def update_issue(
         severity=IssueSeverity[data.severity.value] if data.severity else None
     )
     
-    return issue
+    return {
+        "success": True,
+        "message": "Issue updated successfully",
+        "data": issue
+    }
 
 
 @router.delete(
@@ -1037,7 +1329,7 @@ def delete_issue(
 
 @router.post(
     "/audits/{audit_id}/recommendations",
-    response_model=RecommendationResponse,
+    response_model=BaseResponse[RecommendationResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Create audit recommendation",
     description="Create a recommendation for schedule changes based on audit findings"
@@ -1072,21 +1364,16 @@ def create_recommendation(
         user_id=current_user.id
     )
     
-    logger.info(
-        "Recommendation created via API",
-        extra={
-            "recommendation_id": str(recommendation.id),
-            "audit_id": str(audit_id),
-            "user_id": str(current_user.id)
-        }
-    )
-    
-    return recommendation
+    return {
+        "success": True,
+        "message": "Recommendation created successfully",
+        "data": recommendation
+    }
 
 
 @router.get(
     "/audits/{audit_id}/recommendations",
-    response_model=dict,
+    response_model=BaseResponse[RecommendationListResponse],
     summary="Get audit recommendations",
     description="Get all recommendations for a specific audit with pagination"
 )
@@ -1116,17 +1403,21 @@ def get_audit_recommendations(
     )
     
     return {
-        "items": [RecommendationResponse.from_orm(r) for r in recommendations],
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "total_pages": (total + limit - 1) // limit
+        "success": True,
+        "message": "Audit recommendations retrieved successfully",
+        "data": {
+            "items": recommendations,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit if total > 0 else 0
+        }
     }
 
 
 @router.put(
     "/audits/{audit_id}/recommendations/{recommendation_id}",
-    response_model=RecommendationResponse,
+    response_model=BaseResponse[RecommendationResponse],
     summary="Update recommendation",
     description="Update a recommendation before it's applied"
 )
@@ -1154,16 +1445,11 @@ def update_recommendation(
         user_id=current_user.id
     )
     
-    logger.info(
-        "Recommendation updated via API",
-        extra={
-            "recommendation_id": str(recommendation_id),
-            "audit_id": str(audit_id),
-            "user_id": str(current_user.id)
-        }
-    )
-    
-    return recommendation
+    return {
+        "success": True,
+        "message": "Recommendation updated successfully",
+        "data": recommendation
+    }
 
 
 @router.delete(
@@ -1211,7 +1497,7 @@ def delete_recommendation(
 
 @router.get(
     "/recommendations/pending",
-    response_model=dict,
+    response_model=BaseResponse[RecommendationListResponse],
     summary="Get pending recommendations for farming organization",
     description="Get all pending recommendations for the current user's farming organization"
 )
@@ -1256,27 +1542,22 @@ def get_pending_recommendations(
         limit=limit
     )
     
-    logger.info(
-        "Pending recommendations retrieved via API",
-        extra={
-            "farming_org_id": str(farming_org_member.organization_id),
-            "user_id": str(current_user.id),
-            "count": len(recommendations)
-        }
-    )
-    
     return {
-        "items": [RecommendationResponse.from_orm(r) for r in recommendations],
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "total_pages": (total + limit - 1) // limit
+        "success": True,
+        "message": "Pending recommendations retrieved successfully",
+        "data": {
+            "items": recommendations,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit if total > 0 else 0
+        }
     }
 
 
 @router.post(
     "/recommendations/{recommendation_id}/approve",
-    response_model=RecommendationResponse,
+    response_model=BaseResponse[RecommendationResponse],
     summary="Approve recommendation",
     description="Approve a recommendation and apply it to the schedule"
 )
@@ -1332,24 +1613,17 @@ def approve_recommendation(
             error_code="NOT_AUTHORIZED"
         )
     
-    # Approve recommendation
     service = RecommendationService(db)
     approved_recommendation = service.approve_recommendation(
         recommendation_id=recommendation_id,
         user_id=current_user.id
     )
     
-    logger.info(
-        "Recommendation approved via API",
-        extra={
-            "recommendation_id": str(recommendation_id),
-            "schedule_id": str(approved_recommendation.schedule_id),
-            "user_id": str(current_user.id),
-            "farming_org_id": str(farming_org_id)
-        }
-    )
-    
-    return RecommendationResponse.from_orm(approved_recommendation)
+    return {
+        "success": True,
+        "message": "Recommendation approved and applied successfully",
+        "data": approved_recommendation
+    }
 
 
 @router.post(
@@ -1440,7 +1714,7 @@ def reject_recommendation(
 
 @router.post(
     "/audits/{audit_id}/finalize",
-    response_model=AuditResponse,
+    response_model=BaseResponse[AuditResponse],
     summary="Finalize audit",
     description="Finalize an audit, transitioning from REVIEWED to FINALIZED status"
 )
@@ -1479,16 +1753,11 @@ def finalize_audit(
         user_id=current_user.id
     )
 
-    logger.info(
-        "Audit finalized successfully via API",
-        extra={
-            "audit_id": str(audit_id),
-            "finalized_by": str(current_user.id),
-            "finalized_at": audit.finalized_at.isoformat() if audit.finalized_at else None
-        }
-    )
-
-    return audit
+    return {
+        "success": True,
+        "message": "Audit finalized successfully",
+        "data": audit
+    }
 
 
 
@@ -1498,7 +1767,7 @@ def finalize_audit(
 
 @router.post(
     "/audits/{audit_id}/share",
-    response_model=AuditResponse,
+    response_model=BaseResponse[AuditResponse],
     summary="Share audit",
     description="Share a finalized audit with the farming organization"
 )
@@ -1536,13 +1805,8 @@ def share_audit(
         user_id=current_user.id
     )
 
-    logger.info(
-        "Audit shared successfully via API",
-        extra={
-            "audit_id": str(audit_id),
-            "shared_at": audit.shared_at.isoformat() if audit.shared_at else None,
-            "farming_organization_id": str(audit.farming_organization_id)
-        }
-    )
-
-    return audit
+    return {
+        "success": True,
+        "message": "Audit shared successfully",
+        "data": audit
+    }

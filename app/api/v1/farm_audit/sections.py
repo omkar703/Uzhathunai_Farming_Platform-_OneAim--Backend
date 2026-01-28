@@ -1,7 +1,7 @@
 """
 Sections API endpoints for Farm Audit Management in Uzhathunai v2.0.
 """
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -13,14 +13,16 @@ from app.schemas.section import (
     SectionCreate,
     SectionUpdate,
     SectionResponse,
-    SectionDetailResponse
+    SectionDetailResponse,
+    SectionListResponse
 )
+from app.schemas.response import BaseResponse
 from app.services.section_service import SectionService
 
 router = APIRouter()
 
 
-def get_user_organization_id(user: User, db: Session) -> UUID:
+def get_user_organization_id(user: User, db: Session) -> Optional[UUID]:
     """
     Helper function to get user's current organization ID.
     
@@ -29,15 +31,26 @@ def get_user_organization_id(user: User, db: Session) -> UUID:
         db: Database session
         
     Returns:
-        Organization ID
+        Organization ID or None if Super Admin
         
     Raises:
         PermissionError: If user is not a member of any organization
     """
     from app.models.organization import OrgMember
+    from app.models.organization import OrgMemberRole
+    from app.models.rbac import Role
     from app.models.enums import MemberStatus
     from app.core.exceptions import PermissionError
     
+    # Check for Super Admin role first
+    is_super_admin = db.query(OrgMemberRole).join(Role).filter(
+        OrgMemberRole.user_id == user.id,
+        Role.code == "SUPER_ADMIN"
+    ).first() is not None
+    
+    if is_super_admin:
+        return None
+
     membership = db.query(OrgMember).filter(
         OrgMember.user_id == user.id,
         OrgMember.status == MemberStatus.ACTIVE
@@ -49,17 +62,19 @@ def get_user_organization_id(user: User, db: Session) -> UUID:
             error_code="NO_ORGANIZATION_MEMBERSHIP"
         )
     
-    return org_id
+    return membership.organization_id
 
 
 # ============================================================================
 # Section Endpoints
 # ============================================================================
 
-@router.get("", response_model=List[SectionResponse])
+@router.get("", response_model=BaseResponse[SectionListResponse])
 def get_sections(
     include_system: bool = Query(True, description="Include system-defined sections"),
     language: str = Query("en", description="Language code (en, ta, ml)"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -68,16 +83,30 @@ def get_sections(
     
     - **include_system**: Include system-defined sections (default: true)
     - **language**: Language code for translations (default: en)
+    - **page**: Page number (default: 1)
+    - **limit**: Items per page (default: 20)
     
     Returns list of sections (system and org-specific).
     """
     service = SectionService(db)
     org_id = get_user_organization_id(current_user, db)
     
-    return service.get_sections(org_id, language, include_system)
+    items, total = service.get_sections(org_id, language, include_system, page, limit)
+    
+    return {
+        "success": True,
+        "message": "Sections retrieved successfully",
+        "data": {
+            "items": items,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit if total > 0 else 0
+        }
+    }
 
 
-@router.get("/{section_id}", response_model=SectionDetailResponse)
+@router.get("/{section_id}", response_model=BaseResponse[SectionDetailResponse])
 def get_section(
     section_id: UUID,
     language: str = Query("en", description="Language code (en, ta, ml)"),
@@ -95,10 +124,16 @@ def get_section(
     service = SectionService(db)
     org_id = get_user_organization_id(current_user, db)
     
-    return service.get_section(section_id, org_id, language)
+    section = service.get_section(section_id, org_id, language)
+    
+    return {
+        "success": True,
+        "message": "Section retrieved successfully",
+        "data": section
+    }
 
 
-@router.post("", response_model=SectionDetailResponse, status_code=201)
+@router.post("", response_model=BaseResponse[SectionDetailResponse], status_code=201)
 def create_section(
     data: SectionCreate,
     current_user: User = Depends(get_current_active_user),
@@ -117,10 +152,16 @@ def create_section(
     
     # TODO: Add RBAC check for "Audit Template Management" permission
     
-    return service.create_org_section(data, org_id, current_user.id)
+    section = service.create_org_section(data, org_id, current_user.id)
+    
+    return {
+        "success": True,
+        "message": "Section created successfully",
+        "data": section
+    }
 
 
-@router.put("/{section_id}", response_model=SectionDetailResponse)
+@router.put("/{section_id}", response_model=BaseResponse[SectionDetailResponse])
 def update_section(
     section_id: UUID,
     data: SectionUpdate,
@@ -138,7 +179,13 @@ def update_section(
     
     # TODO: Add RBAC check for "Audit Template Management" permission
     
-    return service.update_org_section(section_id, data, org_id, current_user.id)
+    section = service.update_org_section(section_id, data, org_id, current_user.id)
+    
+    return {
+        "success": True,
+        "message": "Section updated successfully",
+        "data": section
+    }
 
 
 @router.delete("/{section_id}", status_code=204)

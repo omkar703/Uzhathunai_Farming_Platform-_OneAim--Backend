@@ -11,17 +11,19 @@ from uuid import UUID
 from datetime import datetime, date
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func, extract
+from sqlalchemy.orm import joinedload
 
 from app.core.logging import get_logger
 from app.core.exceptions import NotFoundError, ValidationError, PermissionError, ConflictError
-from app.models.audit import Audit, AuditParameterInstance
+from app.models.audit import Audit, AuditParameterInstance, AuditIssue, AuditResponse
+from app.models.schedule import ScheduleChangeLog
 from app.models.template import Template, TemplateSection, TemplateParameter
 from app.models.crop import Crop
 from app.models.plot import Plot
 from app.models.farm import Farm
 from app.models.organization import Organization
 from app.models.user import User
-from app.models.enums import AuditStatus, SyncStatus
+from app.models.enums import AuditStatus, SyncStatus, ScheduleChangeTrigger
 from app.services.snapshot_service import SnapshotService
 
 logger = get_logger(__name__)
@@ -47,7 +49,8 @@ class AuditService:
         name: str,
         user_id: UUID,
         work_order_id: Optional[UUID] = None,
-        audit_date: Optional[date] = None
+        audit_date: Optional[date] = None,
+        assigned_to: Optional[UUID] = None
     ) -> Audit:
         """
         Create a new audit from a template for a specific crop.
@@ -128,11 +131,12 @@ class AuditService:
             template_id=template_id,
             audit_number=audit_number,
             name=name,
-            status=AuditStatus.DRAFT,
+            status=AuditStatus.PENDING if assigned_to else AuditStatus.DRAFT,
             template_snapshot=template_snapshot,
             audit_date=audit_date,
-            sync_status=SyncStatus.SYNCED,
-            created_by=user_id
+            sync_status=SyncStatus.PENDING_SYNC,
+            created_by=user_id,
+            assigned_to_user_id=assigned_to
         )
 
         self.db.add(audit)
@@ -335,14 +339,133 @@ class AuditService:
         Raises:
             NotFoundError: If audit not found
         """
-        audit = self.db.query(Audit).filter(Audit.id == audit_id).first()
+        audit = self.db.query(Audit).options(
+            joinedload(Audit.assigned_to),
+            joinedload(Audit.analyst),
+            joinedload(Audit.fsp_organization)
+        ).filter(Audit.id == audit_id).first()
         if not audit:
             raise NotFoundError(
                 message=f"Audit {audit_id} not found",
                 error_code="AUDIT_NOT_FOUND",
                 details={"audit_id": str(audit_id)}
             )
+        
+        # Calculate and attach progress
+        audit.progress = self._calculate_progress(audit_id)
+        
         return audit
+
+    def assign_audit(
+        self,
+        audit_id: UUID,
+        assigned_to: Optional[UUID] = None,
+        analyst_id: Optional[UUID] = None,
+        user_id: UUID = None
+    ) -> Audit:
+        """
+        Assign an audit to a field officer or analyst.
+        
+        Args:
+            audit_id: UUID of the audit
+            assigned_to: UUID of the field officer (optional)
+            analyst_id: UUID of the analyst (optional)
+            user_id: ID of the user performing the assignment
+            
+        Returns:
+            Updated audit
+        """
+        audit = self.get_audit(audit_id)
+        
+        # Update assignments if provided
+        if assigned_to is not None:
+            # Verify user exists (optional, but good practice)
+            # For now assuming integrity constraint handles it or we trust input
+            audit.assigned_to_user_id = assigned_to
+            
+            # If assigning to FO and status is DRAFT, move to PENDING
+            if audit.status == AuditStatus.DRAFT:
+                audit.status = AuditStatus.PENDING
+                
+        if analyst_id is not None:
+            audit.analyst_user_id = analyst_id
+            
+            # If assigning to Analyst and status is SUBMITTED, move to IN_ANALYSIS?
+            # Or SUBMITTED_FOR_REVIEW?
+            # Let's keep it simple for now, simple assignment shouldn't auto-transition unlikely states
+            # unless specific workflow.
+            if audit.status == AuditStatus.SUBMITTED:
+                 audit.status = AuditStatus.IN_ANALYSIS
+
+        audit.updated_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(audit)
+        
+        logger.info(
+            "Audit assigned",
+            extra={
+                "audit_id": str(audit.id),
+                "assigned_to": str(assigned_to) if assigned_to else None,
+                "analyst_id": str(analyst_id) if analyst_id else None,
+                "user_id": str(user_id)
+            }
+        )
+        
+        return audit
+
+    def _calculate_progress(self, audit_id: UUID) -> float:
+        """
+        Calculate audit completion progress.
+        
+        Progress is defined as the percentage of mandatory parameters that have responses.
+        If no mandatory parameters exist, uses total parameters.
+        """
+        # Get all instances
+        instances = self.db.query(AuditParameterInstance).filter(
+            AuditParameterInstance.audit_id == audit_id
+        ).all()
+        
+        if not instances:
+            return 0.0
+            
+        # Get response count
+        response_count = self.db.query(AuditResponse).filter(
+            AuditResponse.audit_id == audit_id
+        ).count()
+        
+        # Simple progress: responses / total instances
+        # A more sophisticated version would only count mandatory or specific types
+        # but this matches the "answered / total" logic requested.
+        progress = (response_count / len(instances)) * 100.0
+        return round(min(progress, 100.0), 1)
+
+    def delete_audit(
+        self,
+        audit_id: UUID,
+        user_id: UUID
+    ) -> None:
+        """
+        Delete an audit.
+        
+        Args:
+            audit_id: UUID of the audit
+            user_id: ID of the user requesting deletion
+            
+        Raises:
+            NotFoundError: If audit not found
+        """
+        audit = self.get_audit(audit_id)
+        
+        logger.info(
+            "Deleting audit",
+            extra={
+                "audit_id": str(audit_id),
+                "user_id": str(user_id)
+            }
+        )
+        
+        self.db.delete(audit)
+        self.db.commit()
 
     def get_audits(
         self,
@@ -350,6 +473,10 @@ class AuditService:
         farming_organization_id: Optional[UUID] = None,
         crop_id: Optional[UUID] = None,
         status: Optional[AuditStatus] = None,
+        assigned_to_user_id: Optional[UUID] = None,
+        created_by_user_id: Optional[UUID] = None,
+        analyst_user_id: Optional[UUID] = None,
+        work_order_id: Optional[UUID] = None,
         page: int = 1,
         limit: int = 20
     ) -> Tuple[List[Audit], int]:
@@ -361,6 +488,8 @@ class AuditService:
             farming_organization_id: Filter by farming organization
             crop_id: Filter by crop
             status: Filter by status
+            assigned_to_user_id: Filter by assigned user
+            created_by_user_id: Filter by creator
             page: Page number (1-indexed)
             limit: Items per page
             
@@ -378,6 +507,21 @@ class AuditService:
             query = query.filter(Audit.crop_id == crop_id)
         if status:
             query = query.filter(Audit.status == status)
+        if assigned_to_user_id:
+            query = query.filter(Audit.assigned_to_user_id == assigned_to_user_id)
+        if created_by_user_id:
+            query = query.filter(Audit.created_by == created_by_user_id)
+        if analyst_user_id:
+            query = query.filter(Audit.analyst_user_id == analyst_user_id)
+        if work_order_id:
+            query = query.filter(Audit.work_order_id == work_order_id)
+        
+        # Eager load relationships for list view
+        query = query.options(
+            joinedload(Audit.assigned_to),
+            joinedload(Audit.analyst),
+            joinedload(Audit.fsp_organization)
+        )
 
         # Get total count
         total = query.count()
@@ -385,6 +529,10 @@ class AuditService:
         # Apply pagination
         offset = (page - 1) * limit
         audits = query.order_by(Audit.created_at.desc()).offset(offset).limit(limit).all()
+
+        # Calculate progress for each audit
+        for audit in audits:
+            audit.progress = self._calculate_progress(audit.id)
 
         return audits, total
 
@@ -427,11 +575,24 @@ class AuditService:
             section_id = str(instance.template_section_id)
             if section_id not in sections_map:
                 sections_map[section_id] = []
+            # Extract name from snapshot
+            name = None
+            snapshot = instance.parameter_snapshot
+            if snapshot and "translations" in snapshot:
+                translations = snapshot["translations"]
+                if "en" in translations:
+                    name = translations["en"].get("name")
+                elif translations:
+                    # Fallback to first available
+                    first_lang = next(iter(translations))
+                    name = translations[first_lang].get("name")
+            
             sections_map[section_id].append({
                 "instance_id": str(instance.id),
                 "parameter_id": str(instance.parameter_id),
                 "is_required": instance.is_required,
                 "sort_order": instance.sort_order,
+                "name": name,
                 "parameter_snapshot": instance.parameter_snapshot
             })
 
@@ -457,3 +618,103 @@ class AuditService:
                     structure["sections"].append(section_data)
 
         return structure
+
+    def get_audit_report(self, audit_id: UUID) -> Dict[str, Any]:
+        """
+        Get comprehensive audit report with stats.
+        
+        Args:
+            audit_id: UUID of the audit
+            
+        Returns:
+            Dictionary matching AuditReportResponse schema
+        """
+        # Get audit with related data
+        audit = self.db.query(Audit).filter(Audit.id == audit_id).first()
+        if not audit:
+            raise NotFoundError(
+                message=f"Audit {audit_id} not found",
+                error_code="AUDIT_NOT_FOUND",
+                details={"audit_id": str(audit_id)}
+            )
+
+        # Get instances and responses
+        instances = self.db.query(AuditParameterInstance).filter(
+            AuditParameterInstance.audit_id == audit_id
+        ).all()
+        
+        responses = self.db.query(AuditResponse).filter(
+            AuditResponse.audit_id == audit_id
+        ).all()
+        
+        # Create map of instance_id -> response
+        response_map = {r.audit_parameter_instance_id: r for r in responses}
+        
+        # Calculate stats
+        total_mandatory = 0
+        answered_mandatory = 0
+        total_optional = 0
+        answered_optional = 0
+        
+        for instance in instances:
+            has_response = False
+            response = response_map.get(instance.id)
+            if response:
+                # Check if response is "valid" / non-empty
+                has_response = (
+                    response.response_text is not None or
+                    response.response_numeric is not None or
+                    response.response_date is not None or
+                    (response.response_options is not None and len(response.response_options) > 0)
+                )
+            
+            if instance.is_required:
+                total_mandatory += 1
+                if has_response:
+                    answered_mandatory += 1
+            else:
+                total_optional += 1
+                if has_response:
+                    answered_optional += 1
+                    
+        # Calculate compliance score (percentage of mandatory answered)
+        compliance_score = 0.0
+        if total_mandatory > 0:
+            compliance_score = (answered_mandatory / total_mandatory) * 100.0
+        elif total_optional > 0:
+            # If no mandatory, base on optional? Or 100?
+            # Let's say 100 if no mandatory requirements exists and audit is done?
+            # For now, 0 if nothing to do, or 100?
+            compliance_score = 100.0
+            
+        # Get issues
+        issues = self.db.query(AuditIssue).filter(
+            AuditIssue.audit_id == audit_id
+        ).all()
+        
+        issues_stats = {}
+        for issue in issues:
+            severity = issue.severity.value if issue.severity else "UNKNOWN"
+            issues_stats[severity] = issues_stats.get(severity, 0) + 1
+            
+        # Get recommendations (ScheduleChangeLog linked to this audit)
+        recommendations = self.db.query(ScheduleChangeLog).filter(
+            and_(
+                ScheduleChangeLog.trigger_type == ScheduleChangeTrigger.AUDIT,
+                ScheduleChangeLog.trigger_reference_id == audit_id
+            )
+        ).all()
+        
+        return {
+            "audit": audit,
+            "stats": {
+                "compliance_score": round(compliance_score, 1),
+                "total_mandatory": total_mandatory,
+                "answered_mandatory": answered_mandatory,
+                "total_optional": total_optional,
+                "answered_optional": answered_optional,
+                "issues_by_severity": issues_stats
+            },
+            "issues": issues,
+            "recommendations": recommendations
+        }

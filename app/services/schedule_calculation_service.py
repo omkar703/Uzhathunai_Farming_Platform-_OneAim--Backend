@@ -83,20 +83,89 @@ class ScheduleCalculationService:
         calculated_items = []
         
         for item in input_items_template:
-            calculated_qty = self._calculate_quantity(
-                item['quantity'],
-                item['calculation_basis'],
-                template_parameters
-            )
-            
-            calculated_items.append({
-                'input_item_id': item['input_item_id'],
-                'quantity': calculated_qty,
-                'quantity_unit_id': item['quantity_unit_id']
-            })
+            # Handle new dosage structure
+            if 'dosage' in item:
+                dosage = item['dosage']
+                calculated_qty = self._calculate_dosage_quantity(
+                    dosage['amount'],
+                    dosage.get('per'),
+                    template_parameters
+                )
+                
+                result_item = {
+                    'input_item_id': item['input_item_id'],
+                    'quantity': calculated_qty,
+                    'quantity_unit_id': dosage.get('unit_id') or dosage.get('unit'), # Assuming unit field handles ID or Code. Schema probably expects ID.
+                    'dosage': dosage # Persist dosage info for reference/display
+                }
+                
+                # Copy other fields like application_method_id if present in item level
+                if 'application_method_id' in item:
+                    result_item['application_method_id'] = item['application_method_id']
+                    
+                calculated_items.append(result_item)
+                
+            else:
+                # Handle old calculation_basis
+                calculated_qty = self._calculate_quantity(
+                    item['quantity'],
+                    item['calculation_basis'],
+                    template_parameters
+                )
+                
+                calculated_items.append({
+                    'input_item_id': item['input_item_id'],
+                    'quantity': calculated_qty,
+                    'quantity_unit_id': item['quantity_unit_id']
+                })
         
         return calculated_items
-    
+
+    def _calculate_dosage_quantity(
+        self,
+        amount: float,
+        per: str,
+        template_parameters: Dict[str, Any]
+    ) -> float:
+        """
+        Calculate quantity based on dosage.per value.
+        
+        Args:
+            amount: Dosage amount
+            per: Scaling factor ('ACRE', 'PLANT', 'LITER_WATER')
+            template_parameters: Payload parameters
+            
+        Returns:
+            float: Calculated quantity
+        """
+        if per == 'ACRE':
+            # Map total_acres or area
+            factor = template_parameters.get('total_acres') or template_parameters.get('area')
+            if factor is None:
+                 raise ValidationError(message="Missing 'total_acres' or 'area' for ACRE calculation", error_code="MISSING_SCALING_FACTOR")
+            return float(amount) * float(factor)
+            
+        elif per == 'PLANT':
+            # Map total_plants or plant_count
+            factor = template_parameters.get('total_plants') or template_parameters.get('plant_count')
+            if factor is None:
+                raise ValidationError(message="Missing 'total_plants' or 'plant_count' for PLANT calculation", error_code="MISSING_SCALING_FACTOR")
+            return float(amount) * float(factor)
+            
+        elif per == 'LITER_WATER':
+            # Map water_liters
+            factor = template_parameters.get('water_liters')
+            if factor is None:
+                raise ValidationError(message="Missing 'water_liters' for LITER_WATER calculation", error_code="MISSING_SCALING_FACTOR")
+            return float(amount) * float(factor)
+            
+        elif per is None:
+             # Fixed amount if per is not specified? Or error? Assuming fixed.
+             return float(amount)
+             
+        else:
+             raise ValidationError(message=f"Invalid dosage per: {per}", error_code="INVALID_DOSAGE_PER")
+
     def _calculate_labor(
         self,
         labor_template: Dict[str, Any],
@@ -196,10 +265,10 @@ class ScheduleCalculationService:
         """
         if calculation_basis == 'per_acre':
             # Requirement 6.8: Multiply by area
-            area = template_parameters.get('area')
+            area = template_parameters.get('area') or template_parameters.get('total_acres')
             if area is None:
                 raise ValidationError(
-                    message="Area required for per_acre calculation",
+                    message="Area/Total Acres required for per_acre calculation",
                     error_code="MISSING_AREA_PARAMETER",
                     details={"calculation_basis": calculation_basis}
                 )
@@ -207,10 +276,10 @@ class ScheduleCalculationService:
         
         elif calculation_basis == 'per_plant':
             # Requirement 6.9: Multiply by plant_count
-            plant_count = template_parameters.get('plant_count')
+            plant_count = template_parameters.get('plant_count') or template_parameters.get('total_plants')
             if plant_count is None:
                 raise ValidationError(
-                    message="Plant count required for per_plant calculation",
+                    message="Plant count/Total Plants required for per_plant calculation",
                     error_code="MISSING_PLANT_COUNT_PARAMETER",
                     details={"calculation_basis": calculation_basis}
                 )
@@ -279,11 +348,22 @@ class ScheduleCalculationService:
         # Check input items
         if 'input_items' in template:
             for item in template['input_items']:
-                if item.get('calculation_basis') == 'per_acre':
-                    required_params.add('area')
-                    required_params.add('area_unit_id')
-                elif item.get('calculation_basis') == 'per_plant':
-                    required_params.add('plant_count')
+                if 'dosage' in item:
+                    # New dosage support
+                    per = item['dosage'].get('per')
+                    if per == 'ACRE':
+                         required_params.add('total_acres') # or area
+                    elif per == 'PLANT':
+                         required_params.add('total_plants') # or plant_count
+                    elif per == 'LITER_WATER':
+                         required_params.add('water_liters')
+                else:
+                    # Old calculation_basis support
+                    if item.get('calculation_basis') == 'per_acre':
+                        required_params.add('area')
+                        required_params.add('area_unit_id')
+                    elif item.get('calculation_basis') == 'per_plant':
+                        required_params.add('plant_count')
         
         # Check labor
         if 'labor' in template:

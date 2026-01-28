@@ -12,12 +12,16 @@ from app.core.auth import get_current_active_user
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.crop import CropPhotoResponse
+from app.schemas.response import BaseResponse
 from app.services.crop_photo_service import CropPhotoService
+
+from app.core.organization_context import get_organization_id
+from app.models.enums import OrganizationType
 
 router = APIRouter()
 
 
-@router.post("/crops/{crop_id}/photos", response_model=CropPhotoResponse, status_code=201)
+@router.post("/crops/{crop_id}/photos", response_model=BaseResponse[CropPhotoResponse], status_code=201)
 async def upload_crop_photo(
     crop_id: UUID,
     file: UploadFile = File(..., description="Photo file (JPEG, PNG)"),
@@ -39,10 +43,8 @@ async def upload_crop_photo(
     """
     service = CropPhotoService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     # Parse photo_date if provided
     parsed_photo_date = None
@@ -64,16 +66,21 @@ async def upload_crop_photo(
         photo_date=parsed_photo_date
     )
     
-    return await service.upload_photo(
+    photo = await service.upload_photo(
         crop_id,
         org_id,
         file,
         upload_data,
         current_user.id
     )
+    return {
+        "success": True,
+        "message": "Photo uploaded successfully",
+        "data": photo
+    }
 
 
-@router.get("/crops/{crop_id}/photos", response_model=List[CropPhotoResponse])
+@router.get("/crops/{crop_id}/photos", response_model=BaseResponse[list[CropPhotoResponse]])
 def get_crop_photos(
     crop_id: UUID,
     current_user: User = Depends(get_current_active_user),
@@ -88,15 +95,18 @@ def get_crop_photos(
     """
     service = CropPhotoService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.get_photos_by_crop(crop_id, org_id)
+    photos = service.get_photos_by_crop(crop_id, org_id)
+    return {
+        "success": True,
+        "message": "Crop photos retrieved successfully",
+        "data": photos
+    }
 
 
-@router.get("/{photo_id}", response_model=CropPhotoResponse)
+@router.get("/{photo_id}", response_model=BaseResponse[CropPhotoResponse])
 def get_crop_photo(
     photo_id: UUID,
     current_user: User = Depends(get_current_active_user),
@@ -111,12 +121,15 @@ def get_crop_photo(
     """
     service = CropPhotoService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.get_photo_by_id(photo_id, org_id)
+    photo = service.get_photo_by_id(photo_id, org_id)
+    return {
+        "success": True,
+        "message": "Crop photo retrieved successfully",
+        "data": photo
+    }
 
 
 @router.delete("/{photo_id}", status_code=204)
@@ -134,10 +147,8 @@ def delete_crop_photo(
     """
     service = CropPhotoService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.delete_photo(photo_id, org_id, current_user.id)
     return None

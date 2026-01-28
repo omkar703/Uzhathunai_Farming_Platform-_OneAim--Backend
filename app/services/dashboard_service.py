@@ -148,9 +148,10 @@ class DashboardService:
                 'activeClients': self._count_fsp_clients(org_id),
                 'activeOrders': self._count_fsp_work_orders(org_id),
                 'auditsInProgress': self._count_audits_in_progress(org_id),
-                'pendingRecommendations': self._count_pending_recommendations(org_id),
                 'pendingQueries': self._count_pending_queries(org_id),
-                'activeTeam': self._count_active_users(org_id)
+                'activeTeam': self._count_active_users(org_id),
+                'totalRevenue': float(self._count_total_revenue(org_id) or 0.0),
+                'totalServices': self._count_total_completed_services(org_id)
             }
             
             # Get action required items
@@ -294,6 +295,20 @@ class DashboardService:
             Query.status.in_([QueryStatus.OPEN, QueryStatus.IN_PROGRESS])
         ).count()
     
+    def _count_total_revenue(self, org_id: UUID) -> float:
+        """Calculate total revenue from completed work orders for FSP."""
+        return self.db.query(func.sum(WorkOrder.total_amount)).filter(
+            WorkOrder.fsp_organization_id == org_id,
+            WorkOrder.status == WorkOrderStatus.COMPLETED
+        ).scalar() or 0.0
+    
+    def _count_total_completed_services(self, org_id: UUID) -> int:
+        """Count total completed services/work orders for FSP."""
+        return self.db.query(WorkOrder).filter(
+            WorkOrder.fsp_organization_id == org_id,
+            WorkOrder.status == WorkOrderStatus.COMPLETED
+        ).count()
+    
     # Action Required Methods
     
     def _get_pending_recommendations(self, org_id: UUID) -> List[Dict[str, Any]]:
@@ -433,7 +448,7 @@ class DashboardService:
     # Recent Activity Methods
     
     def _get_recent_activity(self, org_id: UUID, limit: int = 5) -> List[Dict[str, Any]]:
-        """Get recent activity for organization."""
+        """Get recent activity for organization with standardized format."""
         activities = []
         
         # Get recent farms
@@ -444,11 +459,13 @@ class DashboardService:
         for farm in recent_farms:
             activities.append({
                 'id': str(farm.id),
-                'icon': 'barn',
+                'type': 'farm_created',
                 'description': f"Farm '{farm.name}' was created",
                 'timestamp': farm.created_at.isoformat(),
-                'relatedEntity': 'farm',
-                'relatedEntityId': str(farm.id)
+                'metadata': {
+                    'entityId': str(farm.id),
+                    'entityType': 'farm'
+                }
             })
         
         # Get recent crops
@@ -459,11 +476,13 @@ class DashboardService:
         for crop in recent_crops:
             activities.append({
                 'id': str(crop.id),
-                'icon': 'sprout',
-                'description': f"Crop was planted",
+                'type': 'crop_planted',
+                'description': "New crop was planted",
                 'timestamp': crop.created_at.isoformat(),
-                'relatedEntity': 'crop',
-                'relatedEntityId': str(crop.id)
+                'metadata': {
+                    'entityId': str(crop.id),
+                    'entityType': 'crop'
+                }
             })
         
         # Get recent work orders
@@ -472,16 +491,19 @@ class DashboardService:
                 WorkOrder.farming_organization_id == org_id,
                 WorkOrder.fsp_organization_id == org_id
             )
-        ).order_by(WorkOrder.created_at.desc()).limit(1).all()
+        ).order_by(WorkOrder.created_at.desc()).limit(2).all()
         
         for wo in recent_work_orders:
             activities.append({
                 'id': str(wo.id),
-                'icon': 'briefcase',
-                'description': f"Work order was created",
+                'type': 'work_order_created',
+                'description': f"Work order '{wo.title}' was created",
                 'timestamp': wo.created_at.isoformat(),
-                'relatedEntity': 'work_order',
-                'relatedEntityId': str(wo.id)
+                'metadata': {
+                    'entityId': str(wo.id),
+                    'entityType': 'work_order',
+                    'status': wo.status.value
+                }
             })
         
         # Sort by timestamp and limit

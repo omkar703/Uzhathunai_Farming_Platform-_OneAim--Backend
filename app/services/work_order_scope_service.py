@@ -379,6 +379,34 @@ class WorkOrderScopeService:
         
         # Check each work order for access
         for work_order in active_work_orders:
+            # Check if farmer explicitly granted/revoked access
+            if not work_order.access_granted:
+                self.logger.info(
+                    "FSP access denied (access_granted=False)",
+                    extra={"work_order_id": str(work_order.id)}
+                )
+                continue
+
+            # Global Access Check: If access_granted is True, allow if resource belongs to farming org
+            if work_order.access_granted:
+                # Determine owner org of the resource
+                owner_org_id = None
+                if resource_type == WorkOrderScopeType.ORGANIZATION:
+                    owner_org_id = resource_id
+                else:
+                    owner_org_id = self._get_farming_org_for_resource(resource_type, resource_id)
+                
+                if owner_org_id and str(owner_org_id) == str(work_order.farming_organization_id):
+                    self.logger.info(
+                        "FSP access granted (global access)",
+                        extra={
+                            "work_order_id": str(work_order.id),
+                            "resource_type": resource_type.value,
+                            "access_granted": True
+                        }
+                    )
+                    return True
+
             # Direct scope match
             scope_item = self.db.query(WorkOrderScope).filter(
                 WorkOrderScope.work_order_id == work_order.id,
@@ -386,22 +414,26 @@ class WorkOrderScopeService:
                 WorkOrderScope.scope_id == resource_id
             ).first()
             
-            if scope_item and scope_item.access_permissions.get(required_permission):
-                self.logger.info(
-                    "FSP access granted (direct match)",
-                    extra={
-                        "work_order_id": str(work_order.id),
-                        "scope_type": resource_type.value
-                    }
-                )
-                return True
+            if scope_item:
+                # Check if global access allows it OR specific permission set
+                if work_order.access_granted or scope_item.access_permissions.get(required_permission):
+                    self.logger.info(
+                        "FSP access granted (direct match)",
+                        extra={
+                            "work_order_id": str(work_order.id),
+                            "scope_type": resource_type.value,
+                            "access_granted": work_order.access_granted
+                        }
+                    )
+                    return True
             
             # Hierarchical check
             if self._check_hierarchical_access(
                 work_order.id,
                 resource_type,
                 resource_id,
-                required_permission
+                required_permission,
+                access_granted=work_order.access_granted
             ):
                 return True
         
@@ -577,7 +609,8 @@ class WorkOrderScopeService:
         work_order_id: UUID,
         resource_type: WorkOrderScopeType,
         resource_id: UUID,
-        required_permission: str
+        required_permission: str,
+        access_granted: bool = False
     ) -> bool:
         """
         Check hierarchical access for resource.
@@ -587,6 +620,7 @@ class WorkOrderScopeService:
             resource_type: Resource type
             resource_id: Resource ID
             required_permission: Required permission
+            access_granted: Whether work order has global access granted
         
         Returns:
             True if hierarchical access granted
@@ -603,7 +637,7 @@ class WorkOrderScopeService:
                     WorkOrderScope.scope_id == farming_org_id
                 ).first()
                 
-                if org_scope and org_scope.access_permissions.get(required_permission):
+                if org_scope and (access_granted or org_scope.access_permissions.get(required_permission)):
                     self.logger.info(
                         "FSP access granted (organization scope)",
                         extra={"work_order_id": str(work_order_id)}
@@ -621,7 +655,7 @@ class WorkOrderScopeService:
                     WorkOrderScope.scope_id == farm_id
                 ).first()
                 
-                if farm_scope and farm_scope.access_permissions.get(required_permission):
+                if farm_scope and (access_granted or farm_scope.access_permissions.get(required_permission)):
                     self.logger.info(
                         "FSP access granted (farm scope)",
                         extra={"work_order_id": str(work_order_id)}
@@ -639,7 +673,7 @@ class WorkOrderScopeService:
                     WorkOrderScope.scope_id == crop.plot_id
                 ).first()
                 
-                if plot_scope and plot_scope.access_permissions.get(required_permission):
+                if plot_scope and (access_granted or plot_scope.access_permissions.get(required_permission)):
                     self.logger.info(
                         "FSP access granted (plot scope)",
                         extra={"work_order_id": str(work_order_id)}

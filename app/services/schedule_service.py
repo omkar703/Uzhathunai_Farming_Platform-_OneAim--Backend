@@ -18,6 +18,8 @@ from app.core.logging import get_logger
 from app.core.exceptions import NotFoundError, ValidationError, PermissionError
 from app.services.schedule_calculation_service import ScheduleCalculationService
 from app.services.rbac_service import RBACService
+from app.services.work_order_scope_service import WorkOrderScopeService
+from app.models.enums import WorkOrderScopeType
 
 logger = get_logger(__name__)
 
@@ -29,6 +31,7 @@ class ScheduleService:
         self.db = db
         self.calculation_service = ScheduleCalculationService()
         self.rbac_service = RBACService(db)
+        self.scope_service = WorkOrderScopeService(db)
     
     def create_schedule_from_template(
         self,
@@ -55,6 +58,19 @@ class ScheduleService:
         """
         # Validate access (Requirement 6.1, 6.2, 6.4)
         self._validate_schedule_creation_access(user, crop_id)
+        
+        # Restriction: Farming organizations effectively cannot use templates (New Requirement 1)
+        # Check user's organization type
+        from app.models.organization import Organization
+        from app.models.enums import OrganizationType
+        
+        org = self.db.query(Organization).filter(Organization.id == user.current_organization_id).first()
+        if org and org.organization_type == OrganizationType.FARMING:
+             raise PermissionError(
+                message="Farming organizations are only allowed to create schedules from scratch.",
+                error_code="TEMPLATE_ACCESS_DENIED",
+                details={"organization_id": str(user.current_organization_id)}
+            )
         
         # Get template
         template = self.db.query(ScheduleTemplate).filter(
@@ -154,6 +170,7 @@ class ScheduleService:
             }
         )
         
+        schedule.status = 'ACTIVE' # Has tasks
         return schedule
     
     def create_schedule_from_scratch(
@@ -161,7 +178,9 @@ class ScheduleService:
         crop_id: UUID,
         name: str,
         description: Optional[str],
-        user: User
+        user: User,
+        start_date: Optional[date] = None,
+        template_parameters: Optional[Dict[str, Any]] = None
     ) -> Schedule:
         """
         Create schedule from scratch without template.
@@ -171,6 +190,8 @@ class ScheduleService:
             name: Schedule name
             description: Schedule description
             user: User creating the schedule
+            start_date: Optional start date
+            template_parameters: Optional parameters (area, etc.)
         
         Returns:
             Schedule: Created schedule (without tasks)
@@ -188,6 +209,11 @@ class ScheduleService:
                 error_code="CROP_NOT_FOUND",
                 details={"crop_id": str(crop_id)}
             )
+            
+        # If parameters provided, ensure start_date is in them if passed separately
+        final_params = template_parameters or {}
+        if start_date:
+            final_params['start_date'] = start_date.isoformat()
         
         # Create schedule (Requirement 7.4, 7.5)
         schedule = Schedule(
@@ -195,7 +221,7 @@ class ScheduleService:
             template_id=None,  # No template
             name=name,
             description=description,
-            template_parameters=None,
+            template_parameters=final_params if final_params else None,
             is_active=True,
             created_by=user.id,
             updated_by=user.id
@@ -214,6 +240,7 @@ class ScheduleService:
             }
         )
         
+        schedule.status = TaskStatus.NOT_STARTED.value
         return schedule
     
     def get_schedules(
@@ -261,6 +288,28 @@ class ScheduleService:
         # Get paginated results
         schedules = query.order_by(Schedule.created_at.desc()).offset(offset).limit(limit).all()
         
+        # Populate computed fields for response schema
+        for schedule in schedules:
+            # 1. Computed Status
+            # Logic: If active -> ACTIVE, else CANCELLED. 
+            # TODO: Add logic for COMPLETED based on all tasks being completed
+            schedule.status = TaskStatus.NOT_STARTED.value if not schedule.tasks else 'ACTIVE' 
+            # Use 'ACTIVE' as generic status string or map to Enum if needed.
+            # Frontend expects: ACTIVE, COMPLETED, PENDING, CANCELLED
+            if schedule.is_active:
+                schedule.status = 'ACTIVE'
+            else:
+                schedule.status = 'CANCELLED'
+                
+            # 2. Farm and Crop Names
+            try:
+                if schedule.crop:
+                    schedule.crop_name = schedule.crop.name
+                    if schedule.crop.plot and schedule.crop.plot.farm:
+                        schedule.farm_name = schedule.crop.plot.farm.name
+            except Exception as e:
+                logger.warning(f"Error populating extra fields for schedule {schedule.id}: {e}")
+
         logger.info(
             "Schedules retrieved",
             extra={
@@ -286,7 +335,14 @@ class ScheduleService:
         # Check if user is FSP with consultancy service
         if self._is_fsp_consultancy_user(user):
             # FSP users need active work order with write permission (Requirement 6.4, 7.2)
-            if not self._has_fsp_write_access(user, crop_id):
+            try:
+                self.scope_service.validate_fsp_access(
+                    fsp_organization_id=user.current_organization_id,
+                    resource_type=WorkOrderScopeType.CROP,
+                    resource_id=crop_id,
+                    required_permission='write'
+                )
+            except PermissionError:
                 raise PermissionError(
                     message="FSP requires active work order with write permission for this crop",
                     error_code="FSP_NO_WRITE_ACCESS",
@@ -321,7 +377,7 @@ class ScheduleService:
                 error_code="FARM_NOT_FOUND"
             )
         
-        if farm.organization_id != user.current_organization_id:
+        if str(farm.organization_id) != str(user.current_organization_id):
             raise PermissionError(
                 message="Cannot create schedule for crop not owned by your organization",
                 error_code="CROP_NOT_OWNED",
@@ -347,33 +403,6 @@ class ScheduleService:
         # This can be enhanced to check for specific service listings
         return True
     
-    def _has_fsp_write_access(self, user: User, crop_id: UUID) -> bool:
-        """Check if FSP user has write access to crop via work order."""
-        from app.models.work_order import WorkOrder, WorkOrderScope
-        from app.models.enums import WorkOrderScopeType
-        
-        # Find active work orders for FSP
-        work_orders = self.db.query(WorkOrder).filter(
-            WorkOrder.fsp_organization_id == user.current_organization_id,
-            WorkOrder.status == WorkOrderStatus.ACTIVE
-        ).all()
-        
-        for work_order in work_orders:
-            # Check if crop is in scope with write permission
-            scope_item = self.db.query(WorkOrderScope).filter(
-                WorkOrderScope.work_order_id == work_order.id,
-                WorkOrderScope.scope == WorkOrderScopeType.CROP,
-                WorkOrderScope.scope_id == crop_id
-            ).first()
-            
-            if scope_item and scope_item.access_permissions.get('write'):
-                return True
-            
-            # Check if crop is within broader scope (plot or farm)
-            # This would require traversing the hierarchy
-            # For now, only check direct crop scope
-        
-        return False
     
     def _get_accessible_crop_ids(self, user: User) -> List[UUID]:
         """Get list of crop IDs accessible to user."""
@@ -403,12 +432,46 @@ class ScheduleService:
             ).all()
             
             for work_order in work_orders:
+                # 1. Check Global Access (Grant Farm Access)
+                if work_order.access_granted:
+                    # Get all crops for the farming organization
+                    org_farms = self.db.query(Farm).filter(Farm.organization_id == work_order.farming_organization_id).all()
+                    for farm in org_farms:
+                        farm_plots = self.db.query(Plot).filter(Plot.farm_id == farm.id).all()
+                        for plot in farm_plots:
+                            plot_crops = self.db.query(Crop).filter(Crop.plot_id == plot.id).all()
+                            accessible_crop_ids.extend([c.id for c in plot_crops])
+                    continue
+
+                # 2. Check Scoped Access
                 scope_items = self.db.query(WorkOrderScope).filter(
-                    WorkOrderScope.work_order_id == work_order.id,
-                    WorkOrderScope.scope == WorkOrderScopeType.CROP
+                    WorkOrderScope.work_order_id == work_order.id
                 ).all()
                 
-                accessible_crop_ids.extend([item.scope_id for item in scope_items])
+                for item in scope_items:
+                    if item.scope == WorkOrderScopeType.ORGANIZATION:
+                        # Add all crops for this organization
+                        org_farms = self.db.query(Farm).filter(Farm.organization_id == item.scope_id).all()
+                        for farm in org_farms:
+                            farm_plots = self.db.query(Plot).filter(Plot.farm_id == farm.id).all()
+                            for plot in farm_plots:
+                                plot_crops = self.db.query(Crop).filter(Crop.plot_id == plot.id).all()
+                                accessible_crop_ids.extend([c.id for c in plot_crops])
+                                
+                    elif item.scope == WorkOrderScopeType.FARM:
+                        # Add all crops for this farm
+                        farm_plots = self.db.query(Plot).filter(Plot.farm_id == item.scope_id).all()
+                        for plot in farm_plots:
+                            plot_crops = self.db.query(Crop).filter(Crop.plot_id == plot.id).all()
+                            accessible_crop_ids.extend([c.id for c in plot_crops])
+                            
+                    elif item.scope == WorkOrderScopeType.PLOT:
+                         # Add all crops for this plot
+                        plot_crops = self.db.query(Crop).filter(Crop.plot_id == item.scope_id).all()
+                        accessible_crop_ids.extend([c.id for c in plot_crops])
+                        
+                    elif item.scope == WorkOrderScopeType.CROP:
+                        accessible_crop_ids.append(item.scope_id)
         
         return list(set(accessible_crop_ids))  # Remove duplicates
     
@@ -525,4 +588,5 @@ class ScheduleService:
             }
         )
         
+        new_schedule.status = 'ACTIVE' # Has tasks (copied)
         return new_schedule

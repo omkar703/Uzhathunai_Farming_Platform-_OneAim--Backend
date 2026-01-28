@@ -4,13 +4,14 @@ Input Item models (categories and items) for Uzhathunai v2.0.
 Supports both system-defined and organization-specific input items.
 Models match the database schema exactly from 001_uzhathunai_ddl.sql.
 """
-from sqlalchemy import Column, String, Boolean, Integer, ForeignKey, TIMESTAMP, Text, CheckConstraint, UniqueConstraint
+from sqlalchemy import Column, String, Boolean, Integer, ForeignKey, TIMESTAMP, Text, CheckConstraint, UniqueConstraint, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
 
 from app.core.database import Base
+from app.models.enums import InputItemType
 
 
 class InputItemCategory(Base):
@@ -84,6 +85,8 @@ class InputItem(Base):
     owner_org_id = Column(UUID(as_uuid=True), ForeignKey('organizations.id', ondelete='CASCADE'))
     sort_order = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
+    type = Column(SQLEnum(InputItemType, name='input_item_type'), nullable=True) # made nullable for backward compat, but logic should enforce it
+    default_unit_id = Column(UUID(as_uuid=True), ForeignKey('measurement_units.id'), nullable=True)
     item_metadata = Column(JSONB)  # {"brand": "Tata", "composition": "Urea 46% N", "npk_ratio": "46-0-0", ...}
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())

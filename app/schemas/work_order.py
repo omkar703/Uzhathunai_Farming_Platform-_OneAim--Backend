@@ -8,6 +8,7 @@ from datetime import datetime, date
 from uuid import UUID
 from pydantic import BaseModel, Field, validator
 from app.models.enums import WorkOrderStatus, WorkOrderScopeType
+from app.schemas.user import UserBasicInfo
 
 
 class WorkOrderScopeCreate(BaseModel):
@@ -126,6 +127,22 @@ class WorkOrderStatusUpdate(BaseModel):
         return v
 
 
+class WorkOrderAssignRequest(BaseModel):
+    """Schema for assigning work order."""
+    assigned_to_user_id: UUID
+
+
+class WorkOrderAccessUpdate(BaseModel):
+    """Schema for updating work order access."""
+    access_granted: bool
+
+
+class ServiceSnapshot(BaseModel):
+    """Schema for service snapshot."""
+    name: str
+    description: Optional[str] = None
+
+
 class WorkOrderResponse(BaseModel):
     """Schema for work order response."""
     id: str
@@ -150,6 +167,11 @@ class WorkOrderResponse(BaseModel):
     accepted_by: Optional[str]
     completed_at: Optional[datetime]
     cancelled_at: Optional[datetime]
+    
+    # New fields
+    assigned_member: Optional[UserBasicInfo] = None
+    service_snapshot: Optional[ServiceSnapshot] = None
+    access_granted: bool
     
     @validator(
         'id', 'farming_organization_id', 'fsp_organization_id', 

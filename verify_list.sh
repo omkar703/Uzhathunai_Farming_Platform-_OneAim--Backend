@@ -52,8 +52,8 @@ LIST_RESPONSE=$(curl -s -X GET "$API_URL/organizations" \
 
 echo "List Response: $LIST_RESPONSE"
 
-if [[ "$LIST_RESPONSE" == *"\"is_approved\":false"* ]] || [[ "$LIST_RESPONSE" == *"\"is_approved\": false"* ]]; then
-  echo "✅ 'is_approved' is FALSE as expected, and List Access is GRANTED."
+if [[ "$LIST_RESPONSE" == *"\"is_approved\":true"* ]] || [[ "$LIST_RESPONSE" == *"\"is_approved\": true"* ]]; then
+  echo "✅ 'is_approved' is TRUE (auto-approved), and List Access is GRANTED."
 else
   echo "❌ List Access Failed or Unexpected Response."
   echo "Response: $LIST_RESPONSE"

@@ -83,3 +83,67 @@ class UpdateMemberStatusRequest(BaseModel):
     """Schema for updating member status."""
     status: MemberStatus
     reason: Optional[str] = None
+
+
+class MemberDetailsResponse(BaseModel):
+    """Schema for enhanced member details response."""
+    id: str
+    user_id: str
+    user_name: str
+    user_email: str
+    phone: Optional[str] = None
+    role_id: str
+    role_name: str
+    is_owner: bool
+    status: str
+    joined_at: str
+    bio: Optional[str] = None
+    address: Optional[str] = None
+    profile_picture: Optional[str] = None
+    
+    @validator('id', 'user_id', 'role_id', pre=True)
+    def convert_uuid_to_str(cls, v):
+        """Convert UUID to string."""
+        if v is not None:
+            return str(v)
+        return v
+    
+    class Config:
+        from_attributes = True
+
+
+class MemberWorkHistoryItem(BaseModel):
+    """Schema for a single work history item."""
+    id: str
+    activity_type: str
+    title: str
+    description: Optional[str] = None
+    date: str
+    location: Optional[str] = None
+    metadata: Optional[dict] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class MemberWorkHistoryResponse(BaseModel):
+    """Schema for member work history response with pagination."""
+    items: List[MemberWorkHistoryItem]
+    total: int
+    limit: int
+    offset: int
+    
+    class Config:
+        from_attributes = True
+
+
+class MemberPaginatedResponse(BaseModel):
+    """Schema for paginated member list."""
+    items: List[MemberResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+    
+    class Config:
+        from_attributes = True

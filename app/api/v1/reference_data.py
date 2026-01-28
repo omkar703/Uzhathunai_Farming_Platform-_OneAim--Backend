@@ -17,6 +17,20 @@ from app.services.reference_data_service import ReferenceDataService
 router = APIRouter()
 
 
+@router.get("/application-methods", response_model=List[dict])
+def get_application_methods(
+    language: str = Query("en", description="Language code (en, ta, ml)"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get list of valid application methods.
+    Returns id, name, and requires_concentration boolean.
+    """
+    service = ReferenceDataService(db)
+    return service.get_application_methods(language)
+
+
 @router.get("/types", response_model=List[ReferenceDataTypeResponse])
 def get_reference_data_types(
     current_user: User = Depends(get_current_active_user),

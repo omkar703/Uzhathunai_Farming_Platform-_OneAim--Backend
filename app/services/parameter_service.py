@@ -27,11 +27,13 @@ class ParameterService:
     
     def get_parameters(
         self,
-        org_id: UUID,
+        org_id: Optional[UUID],
         parameter_type: Optional[ParameterType] = None,
         language: str = "en",
-        include_system: bool = True
-    ) -> List[ParameterResponse]:
+        include_system: bool = True,
+        page: int = 1,
+        limit: int = 20
+    ) -> tuple[List[ParameterResponse], int]:
         """
         Get parameters (system-defined and org-specific).
         
@@ -60,40 +62,54 @@ class ParameterService:
         # Filter by ownership
         if include_system:
             # Include both system-defined and org-specific
-            query = query.filter(
-                or_(
-                    Parameter.is_system_defined == True,
-                    Parameter.owner_org_id == org_id
+            if org_id:
+                query = query.filter(
+                    or_(
+                        Parameter.is_system_defined == True,
+                        Parameter.owner_org_id == org_id
+                    )
                 )
-            )
+             # If org_id is None (Super Admin), include everything.
         else:
             # Only org-specific
-            query = query.filter(
-                and_(
-                    Parameter.is_system_defined == False,
-                    Parameter.owner_org_id == org_id
+            if org_id:
+                query = query.filter(
+                    and_(
+                        Parameter.is_system_defined == False,
+                        Parameter.owner_org_id == org_id
+                    )
                 )
-            )
+            else:
+                 # If org_id is None, return all non-system
+                 query = query.filter(Parameter.is_system_defined == False)
         
-        parameters = query.order_by(Parameter.code).all()
+        # Get total count
+        total = query.count()
+        
+        # Apply pagination
+        offset = (page - 1) * limit
+        parameters = query.order_by(Parameter.code).offset(offset).limit(limit).all()
         
         logger.info(
             "Retrieved parameters",
             extra={
                 "org_id": str(org_id),
                 "count": len(parameters),
+                "total": total,
                 "parameter_type": parameter_type.value if parameter_type else None,
                 "include_system": include_system,
-                "language": language
+                "language": language,
+                "page": page,
+                "limit": limit
             }
         )
         
-        return [self._to_parameter_response(p, language) for p in parameters]
+        return [self._to_parameter_response(p, language) for p in parameters], total
     
     def get_parameter(
         self,
         parameter_id: UUID,
-        org_id: UUID,
+        org_id: Optional[UUID],
         language: str = "en"
     ) -> ParameterDetailResponse:
         """
@@ -128,16 +144,17 @@ class ParameterService:
             )
         
         # Validate access
-        if not parameter.is_system_defined and parameter.owner_org_id != org_id:
-            raise PermissionError(
-                message="Cannot access parameter owned by another organization",
-                error_code="INSUFFICIENT_PERMISSIONS",
-                details={
-                    "parameter_id": str(parameter_id),
-                    "owner_org_id": str(parameter.owner_org_id),
-                    "requesting_org_id": str(org_id)
-                }
-            )
+        if org_id:
+            if not parameter.is_system_defined and parameter.owner_org_id != org_id:
+                raise PermissionError(
+                    message="Cannot access parameter owned by another organization",
+                    error_code="INSUFFICIENT_PERMISSIONS",
+                    details={
+                        "parameter_id": str(parameter_id),
+                        "owner_org_id": str(parameter.owner_org_id),
+                        "requesting_org_id": str(org_id)
+                    }
+                )
         
         logger.info(
             "Retrieved parameter",
@@ -153,7 +170,7 @@ class ParameterService:
     def create_org_parameter(
         self,
         data: ParameterCreate,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user_id: UUID
     ) -> ParameterDetailResponse:
         """
@@ -172,17 +189,27 @@ class ParameterService:
             ValidationError: If option sets are invalid
         """
         # Check if parameter code already exists for this org
-        existing = self.db.query(Parameter).filter(
-            and_(
-                Parameter.code == data.code,
-                Parameter.owner_org_id == org_id,
-                Parameter.is_active == True
-            )
-        ).first()
-        
+        if org_id:
+            existing = self.db.query(Parameter).filter(
+                and_(
+                    Parameter.code == data.code,
+                    Parameter.owner_org_id == org_id,
+                    Parameter.is_active == True
+                )
+            ).first()
+        else:
+             # System defined duplicate check
+            existing = self.db.query(Parameter).filter(
+                and_(
+                    Parameter.code == data.code,
+                    Parameter.is_system_defined == True,
+                    Parameter.is_active == True
+                )
+            ).first()
+
         if existing:
             raise ValidationError(
-                message=f"Parameter with code '{data.code}' already exists for this organization",
+                message=f"Parameter with code '{data.code}' already exists",
                 error_code="DUPLICATE_PARAMETER_CODE",
                 details={"code": data.code}
             )
@@ -210,22 +237,26 @@ class ParameterService:
                     )
                 
                 # Validate access to option set
-                if not option_set.is_system_defined and option_set.owner_org_id != org_id:
-                    raise PermissionError(
-                        message="Cannot use option set owned by another organization",
-                        error_code="INSUFFICIENT_PERMISSIONS",
-                        details={
-                            "option_set_id": str(option_set_id),
-                            "owner_org_id": str(option_set.owner_org_id),
-                            "requesting_org_id": str(org_id)
-                        }
-                    )
+                # If org_id is None, we can technically use any option set, but let's be careful.
+                # Assuming system admins can use system option sets or any method.
+                if org_id:
+                    if not option_set.is_system_defined and option_set.owner_org_id != org_id:
+                        raise PermissionError(
+                            message="Cannot use option set owned by another organization",
+                            error_code="INSUFFICIENT_PERMISSIONS",
+                            details={
+                                "option_set_id": str(option_set_id),
+                                "owner_org_id": str(option_set.owner_org_id),
+                                "requesting_org_id": str(org_id)
+                            }
+                        )
         
         # Create parameter
+        is_system = org_id is None
         parameter = Parameter(
             code=data.code,
             parameter_type=data.parameter_type,
-            is_system_defined=False,
+            is_system_defined=is_system,
             owner_org_id=org_id,
             is_active=True,
             parameter_metadata=data.parameter_metadata,
@@ -277,7 +308,7 @@ class ParameterService:
         self,
         parameter_id: UUID,
         data: ParameterUpdate,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user_id: UUID
     ) -> ParameterDetailResponse:
         """
@@ -367,16 +398,17 @@ class ParameterService:
                         details={"option_set_id": str(option_set_id)}
                     )
                 
-                if not option_set.is_system_defined and option_set.owner_org_id != org_id:
-                    raise PermissionError(
-                        message="Cannot use option set owned by another organization",
-                        error_code="INSUFFICIENT_PERMISSIONS",
-                        details={
-                            "option_set_id": str(option_set_id),
-                            "owner_org_id": str(option_set.owner_org_id),
-                            "requesting_org_id": str(org_id)
-                        }
-                    )
+                if org_id:
+                    if not option_set.is_system_defined and option_set.owner_org_id != org_id:
+                        raise PermissionError(
+                            message="Cannot use option set owned by another organization",
+                            error_code="INSUFFICIENT_PERMISSIONS",
+                            details={
+                                "option_set_id": str(option_set_id),
+                                "owner_org_id": str(option_set.owner_org_id),
+                                "requesting_org_id": str(org_id)
+                            }
+                        )
                 
                 mapping = ParameterOptionSetMap(
                     parameter_id=parameter_id,
@@ -403,7 +435,7 @@ class ParameterService:
     def delete_org_parameter(
         self,
         parameter_id: UUID,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user_id: UUID
     ) -> None:
         """
@@ -451,7 +483,7 @@ class ParameterService:
         self,
         source_parameter_id: UUID,
         data: ParameterCopy,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user_id: UUID,
         user: User
     ) -> ParameterDetailResponse:
@@ -497,13 +529,22 @@ class ParameterService:
         self._validate_copy_permission(source_parameter, org_id, user)
         
         # Check if new code already exists for this org
-        existing = self.db.query(Parameter).filter(
-            and_(
-                Parameter.code == data.new_code,
-                Parameter.owner_org_id == org_id,
-                Parameter.is_active == True
-            )
-        ).first()
+        if org_id:
+            existing = self.db.query(Parameter).filter(
+                and_(
+                    Parameter.code == data.new_code,
+                    Parameter.owner_org_id == org_id,
+                    Parameter.is_active == True
+                )
+            ).first()
+        else:
+             existing = self.db.query(Parameter).filter(
+                and_(
+                    Parameter.code == data.new_code,
+                    Parameter.is_system_defined == True, # System
+                    Parameter.is_active == True
+                )
+            ).first()
         
         if existing:
             raise ValidationError(
@@ -516,7 +557,7 @@ class ParameterService:
         new_parameter = Parameter(
             code=data.new_code,
             parameter_type=source_parameter.parameter_type,
-            is_system_defined=False,
+            is_system_defined=True if org_id is None else False,
             owner_org_id=org_id,
             is_active=True,
             parameter_metadata=source_parameter.parameter_metadata.copy() if source_parameter.parameter_metadata else {},
@@ -579,6 +620,12 @@ class ParameterService:
         Raises:
             PermissionError: If parameter is system-defined or owned by another org
         """
+        if org_id is None:
+             # System Admin
+             if parameter.is_system_defined:
+                 return # Allow
+             return # Allow editing org parameters too? Yes, super admin.
+
         if parameter.is_system_defined:
             raise PermissionError(
                 message=f"Cannot {operation} system-defined parameter",
@@ -604,7 +651,7 @@ class ParameterService:
     def _validate_copy_permission(
         self,
         source_parameter: Parameter,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user: User
     ) -> None:
         """
@@ -633,7 +680,7 @@ class ParameterService:
             )
         ).first()
         
-        if system_roles:
+        if system_roles or org_id is None:
             # System users can copy any parameter
             return
         
@@ -649,11 +696,13 @@ class ParameterService:
         ).first()
         
         if not consultancy_service:
-            raise PermissionError(
-                message="Organization must have consultancy service to copy parameters",
-                error_code="CONSULTANCY_SERVICE_REQUIRED",
-                details={"org_id": str(org_id)}
-            )
+            # Maybe slightly redundant if org_id is checked later, but safe.
+            if org_id:  # Only check if org context exists
+                raise PermissionError(
+                    message="Organization must have consultancy service to copy parameters",
+                    error_code="CONSULTANCY_SERVICE_REQUIRED",
+                    details={"org_id": str(org_id)}
+                )
         
         # Organization users with consultancy can only copy from their own org
         if not source_parameter.is_system_defined and source_parameter.owner_org_id != org_id:
@@ -695,6 +744,23 @@ class ParameterService:
             for mapping in parameter.option_set_mappings
         ]
         
+        # Find translation for requested language
+        name = next(
+            (t.name for t in parameter.translations if t.language_code == language),
+            None
+        )
+        
+        # Fallback to English if not found
+        if not name:
+            name = next(
+                (t.name for t in parameter.translations if t.language_code == "en"),
+                None
+            )
+            
+        # Fallback to any translation if English not found
+        if not name and parameter.translations:
+            name = parameter.translations[0].name
+
         return ParameterDetailResponse(
             id=parameter.id,
             code=parameter.code,
@@ -707,6 +773,7 @@ class ParameterService:
             updated_at=parameter.updated_at,
             created_by=parameter.created_by,
             updated_by=parameter.updated_by,
+            name=name,
             translations=translations_list,
             option_set_ids=option_set_ids
         )

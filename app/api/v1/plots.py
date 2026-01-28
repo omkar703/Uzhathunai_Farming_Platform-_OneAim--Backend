@@ -17,12 +17,16 @@ from app.schemas.plot import (
     PlotSoilTypeAdd,
     PlotIrrigationModeAdd
 )
+from app.schemas.response import BaseResponse
 from app.services.plot_service import PlotService
+
+from app.core.organization_context import get_organization_id
+from app.models.enums import OrganizationType
 
 router = APIRouter()
 
 
-@router.post("/farms/{farm_id}/plots", response_model=PlotResponse, status_code=201)
+@router.post("/farms/{farm_id}/plots", response_model=BaseResponse[PlotResponse], status_code=201)
 def create_plot(
     farm_id: UUID,
     data: PlotCreate,
@@ -43,15 +47,18 @@ def create_plot(
     """
     service = PlotService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.create_plot(farm_id, data, org_id, current_user.id)
+    plot = service.create_plot(farm_id, data, org_id, current_user.id)
+    return {
+        "success": True,
+        "message": "Plot created successfully",
+        "data": plot
+    }
 
 
-@router.get("/farms/{farm_id}/plots", response_model=dict)
+@router.get("/farms/{farm_id}/plots", response_model=BaseResponse[dict])
 def get_plots_by_farm(
     farm_id: UUID,
     page: int = Query(1, ge=1, description="Page number"),
@@ -66,25 +73,27 @@ def get_plots_by_farm(
     - **page**: Page number (default: 1)
     - **limit**: Items per page (default: 20, max: 100)
     """
-    from app.core.organization_context import get_organization_id
-    
     service = PlotService(db)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     plots, total = service.get_plots_by_farm(farm_id, org_id, page, limit)
     
     return {
-        "items": plots,
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "total_pages": (total + limit - 1) // limit
+        "success": True,
+        "message": "Plots retrieved successfully",
+        "data": {
+            "items": plots,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit
+        }
     }
 
 
-@router.get("/{plot_id}", response_model=PlotResponse)
+@router.get("/{plot_id}", response_model=BaseResponse[PlotResponse])
 def get_plot(
     plot_id: UUID,
     current_user: User = Depends(get_current_active_user),
@@ -99,15 +108,18 @@ def get_plot(
     """
     service = PlotService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.get_plot_by_id(plot_id, org_id)
+    plot = service.get_plot_by_id(plot_id, org_id)
+    return {
+        "success": True,
+        "message": "Plot retrieved successfully",
+        "data": plot
+    }
 
 
-@router.put("/{plot_id}", response_model=PlotResponse)
+@router.put("/{plot_id}", response_model=BaseResponse[PlotResponse])
 def update_plot(
     plot_id: UUID,
     data: PlotUpdate,
@@ -123,12 +135,15 @@ def update_plot(
     """
     service = PlotService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.update_plot(plot_id, org_id, data, current_user.id)
+    plot = service.update_plot(plot_id, org_id, data, current_user.id)
+    return {
+        "success": True,
+        "message": "Plot updated successfully",
+        "data": plot
+    }
 
 
 @router.delete("/{plot_id}", status_code=204)
@@ -146,10 +161,8 @@ def delete_plot(
     """
     service = PlotService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.delete_plot(plot_id, org_id, current_user.id)
     return None
@@ -174,13 +187,15 @@ def add_water_source(
     """
     service = PlotService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.add_water_source(plot_id, data.water_source_id, org_id)
-    return {"message": "Water source added successfully"}
+    return {
+        "success": True,
+        "message": "Water source added successfully",
+        "data": None
+    }
 
 
 @router.post("/{plot_id}/soil-types", status_code=201)
@@ -198,13 +213,15 @@ def add_soil_type(
     """
     service = PlotService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.add_soil_type(plot_id, data.soil_type_id, org_id)
-    return {"message": "Soil type added successfully"}
+    return {
+        "success": True,
+        "message": "Soil type added successfully",
+        "data": None
+    }
 
 
 @router.post("/{plot_id}/irrigation-modes", status_code=201)
@@ -222,10 +239,12 @@ def add_irrigation_mode(
     """
     service = PlotService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.add_irrigation_mode(plot_id, data.irrigation_mode_id, org_id)
-    return {"message": "Irrigation mode added successfully"}
+    return {
+        "success": True,
+        "message": "Irrigation mode added successfully",
+        "data": None
+    }

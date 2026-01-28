@@ -13,6 +13,7 @@ import io
 import os
 
 from app.models.audit import AuditResponse, AuditResponsePhoto, AuditParameterInstance
+from app.models.enums import PhotoSourceType
 from app.core.exceptions import ValidationError, NotFoundError, ServiceError
 from app.core.logging import get_logger
 
@@ -87,12 +88,14 @@ class PhotoService:
         
         # Create photo record
         photo = AuditResponsePhoto(
+            audit_id=audit_id,
             audit_response_id=response_id,
             file_url=file_url,
             file_key=file_key,
             caption=caption,
             uploaded_by=user_id
         )
+
         
         self.db.add(photo)
         self.db.commit()
@@ -103,6 +106,78 @@ class PhotoService:
             extra={
                 "photo_id": str(photo.id),
                 "response_id": str(response_id),
+                "audit_id": str(audit_id),
+                "user_id": str(user_id)
+            }
+        )
+        
+        return photo
+    
+    def upload_evidence(
+        self,
+        audit_id: UUID,
+        file_data: BinaryIO,
+        filename: str,
+        caption: Optional[str],
+        user_id: UUID
+    ) -> AuditResponsePhoto:
+        """
+        Upload evidence photo for audit (without linking to response initially).
+        
+        Args:
+            audit_id: Audit ID
+            file_data: File binary data
+            filename: Original filename
+            caption: Optional photo caption
+            user_id: User uploading the photo
+            
+        Returns:
+            Created AuditResponsePhoto
+        """
+        # Validate audit exists
+        from app.models.audit import Audit
+        audit = self.db.query(Audit).filter(Audit.id == audit_id).first()
+        if not audit:
+            raise NotFoundError(
+                message=f"Audit {audit_id} not found",
+                error_code="AUDIT_NOT_FOUND"
+            )
+
+        # Validate file
+        self._validate_file(file_data, filename)
+        
+        # Compress image
+        compressed_data = self._compress_image(file_data)
+        
+        # Generate file key (use 'evidence' prefix or just handle missing response_id in path)
+        # We'll use a specific path for unlinked evidence or just None for response_id part
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        ext = os.path.splitext(filename)[1] or '.jpg'
+        # Path: audits/{audit_id}/evidence/{timestamp}{ext}
+        file_key = f"audits/{audit_id}/evidence/{timestamp}{ext}"
+        
+        # Upload to storage
+        file_url = self._upload_to_storage(compressed_data, file_key)
+        
+        # Create photo record
+        photo = AuditResponsePhoto(
+            audit_id=audit_id,
+            audit_response_id=None, # Not linked yet
+            file_url=file_url,
+            file_key=file_key,
+            caption=caption,
+            uploaded_by=user_id,
+            source_type=PhotoSourceType.MANUAL_UPLOAD
+        )
+        
+        self.db.add(photo)
+        self.db.commit()
+        self.db.refresh(photo)
+        
+        logger.info(
+            "Evidence uploaded",
+            extra={
+                "photo_id": str(photo.id),
                 "audit_id": str(audit_id),
                 "user_id": str(user_id)
             }

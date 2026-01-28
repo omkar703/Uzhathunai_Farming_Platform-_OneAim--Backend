@@ -67,6 +67,7 @@ class FSPServiceService:
     
     def get_service_listings(
         self,
+        fsp_organization_id: Optional[UUID] = None,
         service_type: Optional[UUID] = None,
         district: Optional[str] = None,
         pricing_model: Optional[str] = None,
@@ -78,6 +79,7 @@ class FSPServiceService:
         Only returns listings from ACTIVE FSP organizations.
         
         Args:
+            fsp_organization_id: Filter by FSP organization ID
             service_type: Filter by master service ID
             district: Filter by service area district
             pricing_model: Filter by pricing model
@@ -90,6 +92,7 @@ class FSPServiceService:
         self.logger.info(
             "Fetching marketplace service listings",
             extra={
+                "fsp_organization_id": str(fsp_organization_id) if fsp_organization_id else None,
                 "service_type": str(service_type) if service_type else None,
                 "district": district,
                 "pricing_model": pricing_model,
@@ -98,17 +101,20 @@ class FSPServiceService:
             }
         )
         
-        # Base query - only ACTIVE listings from ACTIVE FSP organizations
+        # Base query - only ACTIVE listings from ACTIVE or IN_PROGRESS FSP organizations
         query = self.db.query(FSPServiceListing).join(
             Organization,
             FSPServiceListing.fsp_organization_id == Organization.id
         ).filter(
             FSPServiceListing.status == ServiceStatus.ACTIVE,
-            Organization.status == OrganizationStatus.ACTIVE,
+            Organization.status.in_([OrganizationStatus.ACTIVE, OrganizationStatus.IN_PROGRESS]),
             Organization.organization_type == OrganizationType.FSP
         )
         
         # Apply filters
+        if fsp_organization_id:
+            query = query.filter(FSPServiceListing.fsp_organization_id == fsp_organization_id)
+            
         if service_type:
             query = query.filter(FSPServiceListing.service_id == service_type)
         
@@ -184,10 +190,23 @@ class FSPServiceService:
         
         # Verify organization is FSP type
         if org.organization_type != OrganizationType.FSP:
-            raise ValidationError(
-                message="Organization is not FSP type",
-                error_code="NOT_FSP_ORG"
+            self.logger.warning(
+                "Organization type mismatch in get_organization_services",
+                extra={
+                    "org_id": str(org_id),
+                    "expected": OrganizationType.FSP,
+                    "actual": org.organization_type,
+                    "actual_type": str(type(org.organization_type))
+                }
             )
+            # Temporary fix/workaround if it's a string comparison issue
+            if str(org.organization_type) == "FSP":
+                self.logger.info("String comparison matched 'FSP', proceeding anyway")
+            else:
+                raise ValidationError(
+                    message=f"Organization {org_id} is not FSP type (Actual: {org.organization_type})",
+                    error_code="NOT_FSP_ORG"
+                )
         
         # Check if user is a member
         self._check_membership(org_id, user_id)
@@ -202,13 +221,9 @@ class FSPServiceService:
         
         services = query.order_by(FSPServiceListing.created_at.desc()).all()
         
-        self.logger.info(
-            "Organization services fetched",
-            extra={
-                "org_id": str(org_id),
-                "count": len(services)
-            }
-        )
+        # Eagerly load the service relationship for response serialization
+        for service_listing in services:
+            _ = service_listing.service
         
         return services
     
@@ -254,10 +269,19 @@ class FSPServiceService:
         
         # Verify organization is FSP type
         if org.organization_type != OrganizationType.FSP:
-            raise ValidationError(
-                message="Organization is not FSP type",
-                error_code="NOT_FSP_ORG"
+            self.logger.warning(
+                "Organization type mismatch in create_service_listing",
+                extra={
+                    "org_id": str(org_id),
+                    "expected": OrganizationType.FSP,
+                    "actual": org.organization_type
+                }
             )
+            if str(org.organization_type) != "FSP":
+                raise ValidationError(
+                    message=f"Organization {org_id} is not FSP type (Actual: {org.organization_type})",
+                    error_code="NOT_FSP_ORG"
+                )
         
         # Validate FSP organization status - must be ACTIVE to create listings
         # Requirement 1.7: WHEN FSP organization is NOT_STARTED status THEN prevent creating service listings

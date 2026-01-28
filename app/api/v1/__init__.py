@@ -7,6 +7,7 @@ from app.api.v1 import (
     roles,
     members,
     invitations,
+    users,
     fsp_services,
     work_orders,
     schedule_templates,
@@ -25,7 +26,11 @@ from app.api.v1 import (
     crop_yields,
     crop_photos,
     notifications,
-    video_zoom
+    video_zoom,
+    video_zoom,
+    marketplace,
+    chat,
+    farming_services
 )
 from app.api.v1.farm_audit import option_sets, parameters, sections, templates, audits, reports
 from app.api.v1.bff import farming_dashboard, fsp_dashboard
@@ -38,6 +43,9 @@ api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 
 # Include auth routes
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+
+# Include user routes
+api_router.include_router(users.router, prefix="/users", tags=["Users"])
 
 # Include organization routes
 api_router.include_router(organizations.router, prefix="/organizations", tags=["Organizations"])
@@ -53,6 +61,7 @@ api_router.include_router(invitations.router, prefix="/invitations", tags=["Invi
 
 # Include FSP service routes
 api_router.include_router(fsp_services.router, prefix="/fsp-services", tags=["FSP Services"])
+api_router.include_router(farming_services.router, prefix="/farming-services", tags=["Farming Services"])
 
 # Include work order routes
 api_router.include_router(work_orders.router, prefix="/work-orders", tags=["Work Orders"])
@@ -98,9 +107,22 @@ api_router.include_router(templates.router, prefix="/farm-audit/templates", tags
 api_router.include_router(audits.router, prefix="/farm-audit", tags=["Farm Audit - Audits"])
 api_router.include_router(reports.router, prefix="/farm-audit", tags=["Farm Audit - Reports"])
 
+# Include Marketplace routes
+api_router.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace"])
+
 # Include BFF (Backend For Frontend) routes
+from app.api.v1.bff import marketplace as bff_marketplace
 api_router.include_router(farming_dashboard.router, prefix="/bff", tags=["BFF - Dashboard"])
 api_router.include_router(fsp_dashboard.router, prefix="/bff", tags=["BFF - Dashboard"])
+api_router.include_router(bff_marketplace.router, prefix="/bff/marketplace", tags=["BFF - Marketplace"])
+
 
 # Include video session routes
 api_router.include_router(video_zoom.router, prefix="/video", tags=["Video Consultations"])
+
+# Include chat routes
+api_router.include_router(chat.router, prefix="/chat", tags=["Chat"])
+
+# Include Farmer routes
+from app.api.v1.farmer import audits as farmer_audits
+api_router.include_router(farmer_audits.router, prefix="/farmer", tags=["Farmer"])

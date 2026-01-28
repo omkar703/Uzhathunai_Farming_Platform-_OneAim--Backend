@@ -14,12 +14,13 @@ from app.schemas.crop_data import (
     CropTypeResponse,
     CropVarietyResponse
 )
+from app.schemas.response import BaseResponse
 from app.services.crop_data_service import CropDataService
 
 router = APIRouter()
 
 
-@router.get("/categories", response_model=List[CropCategoryResponse])
+@router.get("/categories", response_model=BaseResponse[list[CropCategoryResponse]])
 def get_crop_categories(
     language: str = Query("en", description="Language code (en, ta, ml)"),
     current_user: User = Depends(get_current_active_user),
@@ -33,10 +34,15 @@ def get_crop_categories(
     Returns list of crop categories with translations.
     """
     service = CropDataService(db)
-    return service.get_crop_categories(language)
+    categories = service.get_crop_categories(language)
+    return {
+        "success": True,
+        "message": "Crop categories retrieved successfully",
+        "data": categories
+    }
 
 
-@router.get("/types", response_model=List[CropTypeResponse])
+@router.get("/types", response_model=BaseResponse[list[CropTypeResponse]])
 def get_crop_types(
     category_id: Optional[UUID] = Query(None, description="Filter by category ID"),
     language: str = Query("en", description="Language code (en, ta, ml)"),
@@ -54,20 +60,25 @@ def get_crop_types(
     service = CropDataService(db)
     
     if category_id:
-        return service.get_crop_types_by_category(category_id, language)
+        types = service.get_crop_types_by_category(category_id, language)
     else:
         # Get all types across all categories
         categories = service.get_crop_categories(language)
-        all_types = []
+        types = []
         for category in categories:
-            types = service.get_crop_types_by_category(category.id, language)
-            all_types.extend(types)
-        return all_types
+            cat_types = service.get_crop_types_by_category(category.id, language)
+            types.extend(cat_types)
+            
+    return {
+        "success": True,
+        "message": "Crop types retrieved successfully",
+        "data": types
+    }
 
 
-@router.get("/varieties", response_model=List[CropVarietyResponse])
+@router.get("/varieties", response_model=BaseResponse[list[CropVarietyResponse]])
 def get_crop_varieties(
-    type_id: Optional[UUID] = Query(None, description="Filter by type ID"),
+    type_id: Optional[UUID] = Query(None, alias="crop_type_id", description="Filter by type ID"),
     language: str = Query("en", description="Language code (en, ta, ml)"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -83,20 +94,25 @@ def get_crop_varieties(
     service = CropDataService(db)
     
     if type_id:
-        return service.get_crop_varieties_by_type(type_id, language)
+        varieties = service.get_crop_varieties_by_type(type_id, language)
     else:
         # Get all varieties across all types
         categories = service.get_crop_categories(language)
-        all_varieties = []
+        varieties = []
         for category in categories:
             types = service.get_crop_types_by_category(category.id, language)
             for crop_type in types:
-                varieties = service.get_crop_varieties_by_type(crop_type.id, language)
-                all_varieties.extend(varieties)
-        return all_varieties
+                cat_varieties = service.get_crop_varieties_by_type(crop_type.id, language)
+                varieties.extend(cat_varieties)
+                
+    return {
+        "success": True,
+        "message": "Crop varieties retrieved successfully",
+        "data": varieties
+    }
 
 
-@router.get("/varieties/{variety_id}", response_model=CropVarietyResponse)
+@router.get("/varieties/{variety_id}", response_model=BaseResponse[CropVarietyResponse])
 def get_crop_variety(
     variety_id: UUID,
     language: str = Query("en", description="Language code (en, ta, ml)"),
@@ -137,7 +153,7 @@ def get_crop_variety(
             CropVarietyTranslation.language_code == "en"
         ).first()
     
-    return CropVarietyResponse(
+    res = CropVarietyResponse(
         id=variety.id,
         crop_type_id=variety.crop_type_id,
         code=variety.code,
@@ -147,3 +163,8 @@ def get_crop_variety(
         sort_order=variety.sort_order,
         is_active=variety.is_active
     )
+    return {
+        "success": True,
+        "message": "Crop variety retrieved successfully",
+        "data": res
+    }

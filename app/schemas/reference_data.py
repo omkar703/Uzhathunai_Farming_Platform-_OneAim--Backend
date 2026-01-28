@@ -101,3 +101,13 @@ class ReferenceDataResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class ApplicationMethodResponse(BaseModel):
+    """Schema for application method response."""
+    id: str
+    name: str
+    requires_concentration: bool
+    
+    class Config:
+        from_attributes = True

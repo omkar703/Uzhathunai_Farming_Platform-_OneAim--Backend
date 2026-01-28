@@ -34,7 +34,7 @@ class ScheduleTemplateTranslationResponse(ScheduleTemplateTranslationBase):
 # Template Task schemas
 class ScheduleTemplateTaskBase(BaseModel):
     """Base schema for schedule template task."""
-    task_id: UUID
+    task_id: Optional[UUID] = None
     day_offset: int = Field(..., ge=0, description="Days from schedule start (0 = start date)")
     task_details_template: Dict[str, Any] = Field(..., description="JSONB with calculation formulas")
     sort_order: Optional[int] = Field(0, ge=0)
@@ -47,6 +47,8 @@ class ScheduleTemplateTaskBase(BaseModel):
             raise ValueError('day_offset must be non-negative')
         return v
     
+        return v
+    
     @validator('task_details_template')
     def validate_task_details_template(cls, v):
         """Validate task_details_template structure."""
@@ -54,6 +56,7 @@ class ScheduleTemplateTaskBase(BaseModel):
             raise ValueError('task_details_template must be a dictionary')
         
         valid_calculation_basis = ['per_acre', 'per_plant', 'fixed']
+        valid_dosage_per = ['ACRE', 'PLANT', 'LITER_WATER']
         
         # Validate input_items if present
         if 'input_items' in v:
@@ -61,8 +64,21 @@ class ScheduleTemplateTaskBase(BaseModel):
                 raise ValueError('input_items must be a list')
             
             for item in v['input_items']:
+                # Support old calculation_basis
                 if 'calculation_basis' in item and item['calculation_basis'] not in valid_calculation_basis:
                     raise ValueError(f"Invalid calculation_basis: {item['calculation_basis']}")
+                
+                # Support new dosage object
+                if 'dosage' in item:
+                    dosage = item['dosage']
+                    if not isinstance(dosage, dict):
+                        raise ValueError('dosage must be a dictionary')
+                    
+                    if 'amount' not in dosage:
+                        raise ValueError('dosage missing amount')
+                    
+                    if 'per' in dosage and dosage['per'] not in valid_dosage_per:
+                        raise ValueError(f"Invalid dosage per: {dosage['per']}")
         
         # Validate labor if present
         if 'labor' in v:
@@ -84,7 +100,7 @@ class ScheduleTemplateTaskBase(BaseModel):
 
 class ScheduleTemplateTaskCreate(ScheduleTemplateTaskBase):
     """Schema for creating schedule template task."""
-    pass
+    task_id: Optional[UUID] = None  # Make optional, will be inferred if missing
 
 
 class ScheduleTemplateTaskUpdate(BaseModel):
@@ -120,7 +136,7 @@ class ScheduleTemplateTaskResponse(ScheduleTemplateTaskBase):
 class ScheduleTemplateBase(BaseModel):
     """Base schema for schedule template."""
     code: str = Field(..., min_length=1, max_length=50)
-    crop_type_id: UUID
+    crop_type_id: Optional[UUID] = None
     crop_variety_id: Optional[UUID] = None
     is_system_defined: bool = False
     owner_org_id: Optional[UUID] = None
@@ -130,6 +146,7 @@ class ScheduleTemplateBase(BaseModel):
 class ScheduleTemplateCreate(ScheduleTemplateBase):
     """Schema for creating schedule template."""
     translations: Optional[List[ScheduleTemplateTranslationCreate]] = None
+    tasks: Optional[List[ScheduleTemplateTaskCreate]] = None
     
     @validator('code')
     def validate_code(cls, v):
@@ -144,8 +161,10 @@ class ScheduleTemplateUpdate(BaseModel):
     code: Optional[str] = Field(None, min_length=1, max_length=50)
     crop_type_id: Optional[UUID] = None
     crop_variety_id: Optional[UUID] = None
+    is_active: Optional[bool] = None
     notes: Optional[str] = None
     translations: Optional[List[ScheduleTemplateTranslationCreate]] = None
+    tasks: Optional[List[ScheduleTemplateTaskCreate]] = None
     
     @validator('code')
     def validate_code(cls, v):

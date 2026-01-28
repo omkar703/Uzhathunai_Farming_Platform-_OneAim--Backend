@@ -26,10 +26,12 @@ class SectionService:
     
     def get_sections(
         self,
-        org_id: UUID,
+        org_id: Optional[UUID],
         language: str = "en",
-        include_system: bool = True
-    ) -> List[SectionResponse]:
+        include_system: bool = True,
+        page: int = 1,
+        limit: int = 20
+    ) -> tuple[List[SectionResponse], int]:
         """
         Get sections (system-defined and org-specific).
         
@@ -52,39 +54,56 @@ class SectionService:
         # Filter by ownership
         if include_system:
             # Include both system-defined and org-specific
-            query = query.filter(
-                or_(
-                    Section.is_system_defined == True,
-                    Section.owner_org_id == org_id
+            if org_id:
+                query = query.filter(
+                    or_(
+                        Section.is_system_defined == True,
+                        Section.owner_org_id == org_id
+                    )
                 )
-            )
+            # If org_id is None (Systems Admin), no need to filter further as we want everything
+            # or maybe just system defined? Usually admin sees all.
+            # But based on the request, let's keep it simple.
         else:
             # Only org-specific
-            query = query.filter(
-                and_(
-                    Section.is_system_defined == False,
-                    Section.owner_org_id == org_id
+            if org_id:
+                query = query.filter(
+                    and_(
+                        Section.is_system_defined == False,
+                        Section.owner_org_id == org_id
+                    )
                 )
-            )
+            else:
+                 # If org_id is None (Systems Admin) and include_system=False, 
+                 # this case might be weird, but let's just return all non-system
+                 query = query.filter(Section.is_system_defined == False)
         
-        sections = query.order_by(Section.code).all()
+        # Get total count
+        total = query.count()
+        
+        # Apply pagination
+        offset = (page - 1) * limit
+        sections = query.order_by(Section.code).offset(offset).limit(limit).all()
         
         logger.info(
             "Retrieved sections",
             extra={
                 "org_id": str(org_id),
                 "count": len(sections),
+                "total": total,
                 "include_system": include_system,
-                "language": language
+                "language": language,
+                "page": page,
+                "limit": limit
             }
         )
         
-        return [self._to_section_response(section, language) for section in sections]
+        return [self._to_section_response(section, language) for section in sections], total
     
     def get_section(
         self,
         section_id: UUID,
-        org_id: UUID,
+        org_id: Optional[UUID],
         language: str = "en"
     ) -> SectionDetailResponse:
         """
@@ -118,16 +137,18 @@ class SectionService:
             )
         
         # Validate access
-        if not section.is_system_defined and section.owner_org_id != org_id:
-            raise PermissionError(
-                message="Cannot access section owned by another organization",
-                error_code="INSUFFICIENT_PERMISSIONS",
-                details={
-                    "section_id": str(section_id),
-                    "owner_org_id": str(section.owner_org_id),
-                    "requesting_org_id": str(org_id)
-                }
-            )
+        # If org_id is None (Super Admin), allow access
+        if org_id:
+            if not section.is_system_defined and section.owner_org_id != org_id:
+                raise PermissionError(
+                    message="Cannot access section owned by another organization",
+                    error_code="INSUFFICIENT_PERMISSIONS",
+                    details={
+                        "section_id": str(section_id),
+                        "owner_org_id": str(section.owner_org_id),
+                        "requesting_org_id": str(org_id)
+                    }
+                )
         
         logger.info(
             "Retrieved section",
@@ -143,7 +164,7 @@ class SectionService:
     def create_org_section(
         self,
         data: SectionCreate,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user_id: UUID
     ) -> SectionDetailResponse:
         """
@@ -161,25 +182,38 @@ class SectionService:
             ValidationError: If section code already exists for organization
         """
         # Check if section code already exists for this org
-        existing = self.db.query(Section).filter(
-            and_(
-                Section.code == data.code,
-                Section.owner_org_id == org_id,
-                Section.is_active == True
-            )
-        ).first()
+        if org_id:
+            # Org specific duplicate check
+            existing = self.db.query(Section).filter(
+                and_(
+                    Section.code == data.code,
+                    Section.owner_org_id == org_id,
+                    Section.is_active == True
+                )
+            ).first()
+        else:
+            # System defined duplicate check
+            existing = self.db.query(Section).filter(
+                and_(
+                    Section.code == data.code,
+                    Section.is_system_defined == True,
+                    Section.is_active == True
+                )
+            ).first()
         
         if existing:
             raise ValidationError(
-                message=f"Section with code '{data.code}' already exists for this organization",
+                message=f"Section with code '{data.code}' already exists",
                 error_code="DUPLICATE_SECTION_CODE",
                 details={"code": data.code}
             )
         
         # Create section
+        is_system = org_id is None
+        
         section = Section(
             code=data.code,
-            is_system_defined=False,
+            is_system_defined=is_system,
             owner_org_id=org_id,
             is_active=True,
             created_by=user_id,
@@ -219,7 +253,7 @@ class SectionService:
         self,
         section_id: UUID,
         data: SectionUpdate,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user_id: UUID
     ) -> SectionDetailResponse:
         """
@@ -299,7 +333,7 @@ class SectionService:
     def delete_org_section(
         self,
         section_id: UUID,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user_id: UUID
     ) -> None:
         """
@@ -346,7 +380,7 @@ class SectionService:
     def _validate_ownership(
         self,
         section: Section,
-        org_id: UUID,
+        org_id: Optional[UUID],
         operation: str
     ) -> None:
         """
@@ -360,8 +394,20 @@ class SectionService:
         Raises:
             PermissionError: If section is system-defined or owned by another org
         """
+        if org_id is None:
+             # System Admin can do anything!
+             # Except maybe modifying other org's sections? 
+             # Requirement says "Enable System Admin to Create Audit Sections", implies managing system sections.
+             # If system admin tries to edit org section, let's allow it for now or check logic.
+             # But if they are editing a system section:
+             if section.is_system_defined:
+                 return # Allow
+             
+             # If they try to edit org section, they are super admin, so they can.
+             return
+
         if section.is_system_defined:
-            raise PermissionError(
+             raise PermissionError(
                 message=f"Cannot {operation} system-defined section",
                 error_code="SYSTEM_DEFINED_IMMUTABLE",
                 details={

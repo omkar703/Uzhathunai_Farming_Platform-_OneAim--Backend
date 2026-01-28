@@ -17,12 +17,16 @@ from app.schemas.farm import (
     FarmSoilTypeAdd,
     FarmIrrigationModeAdd
 )
+from app.schemas.response import BaseResponse
 from app.services.farm_service import FarmService
+
+from app.core.organization_context import get_organization_id, validate_organization_type
+from app.models.enums import OrganizationType
 
 router = APIRouter()
 
 
-@router.post("/", response_model=FarmResponse, status_code=201)
+@router.post("/", response_model=BaseResponse[FarmResponse], status_code=201)
 def create_farm(
     data: FarmCreate,
     current_user: User = Depends(get_current_active_user),
@@ -30,28 +34,24 @@ def create_farm(
 ):
     """
     Create a new farm.
-    
-    Requires:
-    - User must be a member of an organization
-    - Farm name and location coordinates
-    - Optional: boundary polygon, area, manager, supervisors
-    
-    GIS validation:
-    - Location coordinates must be valid (lat: -90 to 90, lon: -180 to 180)
-    - Boundary polygon must be closed (first point == last point)
-    - Boundary must have at least 4 points
     """
     service = FarmService(db)
     
-    from app.core.organization_context import get_organization_id
+    # 1. Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # 2. Validation
+    validate_organization_type(org_id, OrganizationType.FARMING, db)
     
-    return service.create_farm(data, org_id, current_user.id)
+    farm = service.create_farm(data, org_id, current_user.id)
+    return {
+        "success": True,
+        "message": "Farm created successfully",
+        "data": farm
+    }
 
 
-@router.get("/", response_model=dict)
+@router.get("/", response_model=BaseResponse[dict])
 def get_farms(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
@@ -60,51 +60,31 @@ def get_farms(
 ):
     """
     Get farms for the current user's organization with pagination.
-    
-    - **page**: Page number (default: 1)
-    - **limit**: Items per page (default: 20, max: 100)
-    
-    Returns paginated list of farms with metadata.
     """
     service = FarmService(db)
     
-    # Get organization ID from JWT token context
-    from uuid import UUID
+    # 1. Get organization ID from context with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    if not hasattr(current_user, 'current_organization_id') or not current_user.current_organization_id:
-        # Fallback to first active membership (backward compatibility)
-        from app.models.organization import OrgMember
-        from app.models.enums import MemberStatus
-        
-        membership = db.query(OrgMember).filter(
-            OrgMember.user_id == current_user.id,
-            OrgMember.status == MemberStatus.ACTIVE
-        ).first()
-        
-        if not membership:
-            from app.core.exceptions import PermissionError
-            raise PermissionError(
-                message="User is not a member of any organization",
-                error_code="NO_ORGANIZATION_MEMBERSHIP"
-            )
-        
-        org_id = org_id
-    else:
-        # Use organization from JWT token
-        org_id = UUID(current_user.current_organization_id)
+    # 2. Validation
+    validate_organization_type(org_id, OrganizationType.FARMING, db)
     
     farms, total = service.get_farms(org_id, page, limit)
     
     return {
-        "items": farms,
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "total_pages": (total + limit - 1) // limit
+        "success": True,
+        "message": "Farms retrieved successfully",
+        "data": {
+            "items": farms,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit
+        }
     }
 
 
-@router.get("/{farm_id}", response_model=FarmResponse)
+@router.get("/{farm_id}", response_model=BaseResponse[FarmResponse])
 def get_farm(
     farm_id: UUID,
     current_user: User = Depends(get_current_active_user),
@@ -119,15 +99,18 @@ def get_farm(
     """
     service = FarmService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.get_farm_by_id(farm_id, org_id)
+    farm = service.get_farm_by_id(farm_id, org_id)
+    return {
+        "success": True,
+        "message": "Farm retrieved successfully",
+        "data": farm
+    }
 
 
-@router.put("/{farm_id}", response_model=FarmResponse)
+@router.put("/{farm_id}", response_model=BaseResponse[FarmResponse])
 def update_farm(
     farm_id: UUID,
     data: FarmUpdate,
@@ -143,12 +126,15 @@ def update_farm(
     """
     service = FarmService(db)
     
-    from app.core.organization_context import get_organization_id
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
-    
-    return service.update_farm(farm_id, data, org_id, current_user.id)
+    farm = service.update_farm(farm_id, data, org_id, current_user.id)
+    return {
+        "success": True,
+        "message": "Farm updated successfully",
+        "data": farm
+    }
 
 
 @router.delete("/{farm_id}", status_code=204)
@@ -166,10 +152,8 @@ def delete_farm(
     """
     service = FarmService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.delete_farm(farm_id, org_id, current_user.id)
     return None
@@ -196,13 +180,15 @@ def assign_supervisor(
     """
     service = FarmService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.assign_supervisor(farm_id, supervisor_id, org_id, current_user.id)
-    return {"message": "Supervisor assigned successfully"}
+    return {
+        "success": True,
+        "message": "Supervisor assigned successfully",
+        "data": None
+    }
 
 
 @router.delete("/{farm_id}/supervisors/{supervisor_id}", status_code=204)
@@ -220,10 +206,8 @@ def remove_supervisor(
     """
     service = FarmService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.remove_supervisor(farm_id, supervisor_id, org_id)
     return None
@@ -248,13 +232,15 @@ def add_water_source(
     """
     service = FarmService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.add_water_source(farm_id, data.water_source_id, org_id)
-    return {"message": "Water source added successfully"}
+    return {
+        "success": True,
+        "message": "Water source added successfully",
+        "data": None
+    }
 
 
 @router.post("/{farm_id}/soil-types", status_code=201)
@@ -272,13 +258,15 @@ def add_soil_type(
     """
     service = FarmService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.add_soil_type(farm_id, data.soil_type_id, org_id)
-    return {"message": "Soil type added successfully"}
+    return {
+        "success": True,
+        "message": "Soil type added successfully",
+        "data": None
+    }
 
 
 @router.post("/{farm_id}/irrigation-modes", status_code=201)
@@ -296,10 +284,12 @@ def add_irrigation_mode(
     """
     service = FarmService(db)
     
-    from app.core.organization_context import get_organization_id
-    
-    # Get organization ID from JWT token
-    org_id = get_organization_id(current_user, db)
+    # Get organization ID from JWT token with Smart Inference
+    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     service.add_irrigation_mode(farm_id, data.irrigation_mode_id, org_id)
-    return {"message": "Irrigation mode added successfully"}
+    return {
+        "success": True,
+        "message": "Irrigation mode added successfully",
+        "data": None
+    }

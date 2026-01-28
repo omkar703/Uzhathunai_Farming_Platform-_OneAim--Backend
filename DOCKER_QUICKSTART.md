@@ -26,7 +26,7 @@ REFRESH_TOKEN_EXPIRE_DAYS=7
 ENVIRONMENT=development
 DEBUG=True
 LOG_LEVEL=INFO
-APP_NAME=Uzhathunai Farming Platform
+APP_NAME=
 API_V1_PREFIX=/api/v1
 
 # CORS Settings

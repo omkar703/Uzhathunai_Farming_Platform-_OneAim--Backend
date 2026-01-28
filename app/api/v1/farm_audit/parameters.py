@@ -15,14 +15,16 @@ from app.schemas.parameter import (
     ParameterUpdate,
     ParameterCopy,
     ParameterResponse,
-    ParameterDetailResponse
+    ParameterDetailResponse,
+    ParameterListResponse
 )
+from app.schemas.response import BaseResponse
 from app.services.parameter_service import ParameterService
 
 router = APIRouter()
 
 
-def get_user_organization_id(user: User, db: Session) -> UUID:
+def get_user_organization_id(user: User, db: Session) -> Optional[UUID]:
     """
     Helper function to get user's current organization ID.
     
@@ -31,15 +33,26 @@ def get_user_organization_id(user: User, db: Session) -> UUID:
         db: Database session
         
     Returns:
-        Organization ID
+        Organization ID or None if Super Admin
         
     Raises:
         PermissionError: If user is not a member of any organization
     """
     from app.models.organization import OrgMember
+    from app.models.organization import OrgMemberRole
+    from app.models.rbac import Role
     from app.models.enums import MemberStatus
     from app.core.exceptions import PermissionError
     
+    # Check for Super Admin role first
+    is_super_admin = db.query(OrgMemberRole).join(Role).filter(
+        OrgMemberRole.user_id == user.id,
+        Role.code == "SUPER_ADMIN"
+    ).first() is not None
+    
+    if is_super_admin:
+        return None
+
     membership = db.query(OrgMember).filter(
         OrgMember.user_id == user.id,
         OrgMember.status == MemberStatus.ACTIVE
@@ -51,18 +64,20 @@ def get_user_organization_id(user: User, db: Session) -> UUID:
             error_code="NO_ORGANIZATION_MEMBERSHIP"
         )
     
-    return org_id
+    return membership.organization_id
 
 
 # ============================================================================
 # Parameter Endpoints
 # ============================================================================
 
-@router.get("", response_model=List[ParameterResponse])
+@router.get("", response_model=BaseResponse[ParameterListResponse])
 def get_parameters(
     parameter_type: Optional[ParameterType] = Query(None, description="Filter by parameter type"),
     include_system: bool = Query(True, description="Include system-defined parameters"),
     language: str = Query("en", description="Language code (en, ta, ml)"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -72,16 +87,30 @@ def get_parameters(
     - **parameter_type**: Filter by parameter type (TEXT, NUMERIC, SINGLE_SELECT, MULTI_SELECT, DATE)
     - **include_system**: Include system-defined parameters (default: true)
     - **language**: Language code for translations (default: en)
+    - **page**: Page number (default: 1)
+    - **limit**: Items per page (default: 20)
     
     Returns list of parameters (system and org-specific).
     """
     service = ParameterService(db)
     org_id = get_user_organization_id(current_user, db)
     
-    return service.get_parameters(org_id, parameter_type, language, include_system)
+    items, total = service.get_parameters(org_id, parameter_type, language, include_system, page, limit)
+    
+    return {
+        "success": True,
+        "message": "Parameters retrieved successfully",
+        "data": {
+            "items": items,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit if total > 0 else 0
+        }
+    }
 
 
-@router.get("/{parameter_id}", response_model=ParameterDetailResponse)
+@router.get("/{parameter_id}", response_model=BaseResponse[ParameterDetailResponse])
 def get_parameter(
     parameter_id: UUID,
     language: str = Query("en", description="Language code (en, ta, ml)"),
@@ -99,10 +128,16 @@ def get_parameter(
     service = ParameterService(db)
     org_id = get_user_organization_id(current_user, db)
     
-    return service.get_parameter(parameter_id, org_id, language)
+    parameter = service.get_parameter(parameter_id, org_id, language)
+    
+    return {
+        "success": True,
+        "message": "Parameter retrieved successfully",
+        "data": parameter
+    }
 
 
-@router.post("", response_model=ParameterDetailResponse, status_code=201)
+@router.post("", response_model=BaseResponse[ParameterDetailResponse], status_code=201)
 def create_parameter(
     data: ParameterCreate,
     current_user: User = Depends(get_current_active_user),
@@ -135,10 +170,16 @@ def create_parameter(
     
     # TODO: Add RBAC check for "Audit Template Management" permission
     
-    return service.create_org_parameter(data, org_id, current_user.id)
+    parameter = service.create_org_parameter(data, org_id, current_user.id)
+    
+    return {
+        "success": True,
+        "message": "Parameter created successfully",
+        "data": parameter
+    }
 
 
-@router.put("/{parameter_id}", response_model=ParameterDetailResponse)
+@router.put("/{parameter_id}", response_model=BaseResponse[ParameterDetailResponse])
 def update_parameter(
     parameter_id: UUID,
     data: ParameterUpdate,
@@ -162,7 +203,13 @@ def update_parameter(
     
     # TODO: Add RBAC check for "Audit Template Management" permission
     
-    return service.update_org_parameter(parameter_id, data, org_id, current_user.id)
+    parameter = service.update_org_parameter(parameter_id, data, org_id, current_user.id)
+    
+    return {
+        "success": True,
+        "message": "Parameter updated successfully",
+        "data": parameter
+    }
 
 
 @router.delete("/{parameter_id}", status_code=204)
@@ -190,7 +237,7 @@ def delete_parameter(
     return None
 
 
-@router.post("/{parameter_id}/copy", response_model=ParameterDetailResponse, status_code=201)
+@router.post("/{parameter_id}/copy", response_model=BaseResponse[ParameterDetailResponse], status_code=201)
 def copy_parameter(
     parameter_id: UUID,
     data: ParameterCopy,
@@ -221,4 +268,10 @@ def copy_parameter(
     
     # TODO: Add RBAC check for "Audit Template Management" permission
     
-    return service.copy_parameter(parameter_id, data, org_id, current_user.id, current_user)
+    parameter = service.copy_parameter(parameter_id, data, org_id, current_user.id, current_user)
+    
+    return {
+        "success": True,
+        "message": "Parameter copied successfully",
+        "data": parameter
+    }

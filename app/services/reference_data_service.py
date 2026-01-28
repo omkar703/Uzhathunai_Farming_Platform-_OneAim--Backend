@@ -258,3 +258,45 @@ class ReferenceDataService:
         )
         
         return result
+
+    def get_application_methods(self, language: str = "en") -> List[dict]:
+        """
+        Get application methods with specific formatting.
+        
+        Args:
+            language: Language code (default: en)
+            
+        Returns:
+            List of application methods with id, name, requires_concentration
+        """
+        # Reuse existing logic to hit cache/db
+        try:
+            methods = self.get_reference_data_by_type("application_methods", language)
+        except NotFoundError:
+             # Try singular if plural failed
+             try:
+                 methods = self.get_reference_data_by_type("application_method", language)
+             except NotFoundError:
+                 return []
+
+        result = []
+        for method in methods:
+            name = method.code 
+            for trans in method.translations:
+                if trans.language_code == language:
+                    name = trans.display_name
+                    break
+            else:
+                 if method.translations:
+                     name = method.translations[0].display_name
+            
+            requires_concentration = False
+            if method.reference_metadata:
+                requires_concentration = method.reference_metadata.get("requires_concentration", False)
+
+            result.append({
+                "id": method.id,
+                "name": name,
+                "requires_concentration": requires_concentration
+            })
+        return result

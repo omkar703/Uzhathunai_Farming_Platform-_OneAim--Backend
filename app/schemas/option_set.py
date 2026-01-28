@@ -21,7 +21,7 @@ class OptionTranslationResponse(OptionTranslationBase):
     created_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Option schemas
@@ -61,7 +61,7 @@ class OptionResponse(OptionBase):
     display_text: Optional[str] = None  # Translated display text for requested language
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Option Set schemas
@@ -93,7 +93,16 @@ class OptionSetResponse(OptionSetBase):
     options: List[OptionResponse] = []
     
     class Config:
-        orm_mode = True
+        from_attributes = True
+
+
+class OptionSetListResponse(BaseModel):
+    """Response schema for paginated option sets."""
+    items: List[OptionSetResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
 
 
 class OptionSetDetailResponse(OptionSetResponse):

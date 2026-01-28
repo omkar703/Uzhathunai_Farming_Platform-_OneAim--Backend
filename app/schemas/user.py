@@ -62,6 +62,8 @@ class UserUpdate(BaseModel):
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
     phone: Optional[str] = Field(None, max_length=20)
     preferred_language: Optional[str] = Field(None, max_length=10)
+    bio: Optional[str] = None
+    address: Optional[str] = None
     
     @validator('phone')
     def validate_phone(cls, v):
@@ -92,6 +94,9 @@ class UserResponse(BaseModel):
     last_name: Optional[str]
     phone: Optional[str]
     preferred_language: str
+    bio: Optional[str] = None
+    address: Optional[str] = None
+    profile_picture_url: Optional[str] = None
     is_active: bool
     is_verified: bool
     last_login: Optional[datetime]
@@ -110,3 +115,42 @@ class UserResponse(BaseModel):
         json_encoders = {
             datetime: lambda v: v.isoformat() if v else None
         }
+
+
+class FreelancerResponse(BaseModel):
+    """Schema for individual freelancer in search results."""
+    id: str
+    name: str
+    email: str
+    phone: Optional[str] = None
+    specialization: Optional[str] = None
+    profile_picture: Optional[str] = None
+    
+    @validator('id', pre=True)
+    def convert_uuid_to_str(cls, v):
+        """Convert UUID to string."""
+        if v is not None:
+            return str(v)
+        return v
+    
+    class Config:
+        from_attributes = True
+
+
+class UserBasicInfo(BaseModel):
+    """Schema for basic user info (for assignment details)."""
+    id: str
+    first_name: str
+    last_name: str
+    profile_picture_url: Optional[str] = None
+    role: Optional[str] = None  # Populated dynamically
+    
+    @validator('id', pre=True)
+    def convert_uuid_to_str(cls, v):
+        """Convert UUID to string."""
+        if v is not None:
+            return str(v)
+        return v
+    
+    class Config:
+        from_attributes = True

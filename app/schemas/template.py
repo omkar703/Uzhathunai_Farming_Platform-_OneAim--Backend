@@ -25,7 +25,7 @@ class TemplateTranslationResponse(TemplateTranslationBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Template Schemas
@@ -35,10 +35,23 @@ class TemplateBase(BaseModel):
     is_active: bool = True
 
 
+# Nested schemas for Template Creation
+class TemplateParameterCreate(BaseModel):
+    parameter_id: UUID
+    is_required: bool = False
+    sort_order: int = 0
+
+class TemplateSectionCreate(BaseModel):
+    section_id: UUID
+    sort_order: int = 0
+    parameters: List[TemplateParameterCreate] = []
+
+
 class TemplateCreate(TemplateBase):
     translations: List[TemplateTranslationCreate] = Field(..., min_items=1)
     is_system_defined: Optional[bool] = None  # Set by service based on user role
-    owner_org_id: Optional[UUID] = None  # Set by service based on user
+    owner_org_id: Optional[UUID] = None  # Set by service based on user role
+    sections: List[TemplateSectionCreate] = []
 
     @validator('translations')
     def validate_translations(cls, v):
@@ -71,8 +84,11 @@ class TemplateUpdate(BaseModel):
 
 class TemplateResponse(TemplateBase):
     id: UUID
+    name: str
+    description: Optional[str]
     is_system_defined: bool
     owner_org_id: Optional[UUID]
+    owner_org_name: Optional[str] = None
     version: int
     created_at: datetime
     updated_at: datetime
@@ -81,7 +97,15 @@ class TemplateResponse(TemplateBase):
     translations: List[TemplateTranslationResponse]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+
+
+class TemplateListResponse(BaseModel):
+    items: List[TemplateResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
 
 
 # Template Section Schemas
@@ -98,7 +122,7 @@ class TemplateSectionResponse(BaseModel):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Template Parameter Schemas
@@ -114,11 +138,12 @@ class TemplateParameterResponse(BaseModel):
     parameter_id: UUID
     is_required: bool
     sort_order: int
+    name: Optional[str] = None
     parameter_snapshot: Optional[Dict[str, Any]]
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Template Copy Schemas
@@ -144,11 +169,11 @@ class TemplateSectionDetail(BaseModel):
     parameters: List[TemplateParameterResponse]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class TemplateDetail(TemplateResponse):
     sections: List[TemplateSectionDetail]
 
     class Config:
-        orm_mode = True
+        from_attributes = True

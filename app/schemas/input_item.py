@@ -8,6 +8,8 @@ from datetime import datetime
 from uuid import UUID
 from pydantic import BaseModel, Field, validator
 
+from app.models.enums import InputItemType
+
 
 class ItemMetadata(BaseModel):
     """Schema for input item metadata structure."""
@@ -125,6 +127,8 @@ class InputItemCreate(BaseModel):
     translations: list[dict] = Field(..., min_items=1, description="Translations (at least one required)")
     item_metadata: Optional[Dict[str, Any]] = Field(None, description="Item metadata (brand, composition, NPK ratio, etc.)")
     sort_order: int = Field(default=0)
+    type: Optional[InputItemType] = Field(None, description="Item type (FERTILIZER, PESTICIDE, OTHER)")
+    default_unit_id: Optional[UUID] = Field(None, description="Default measurement unit ID")
     
     @validator('code')
     def validate_code(cls, v):
@@ -150,6 +154,8 @@ class InputItemUpdate(BaseModel):
     """Schema for updating input item (org-specific only)."""
     translations: Optional[list[dict]] = Field(None, description="Translations to update")
     item_metadata: Optional[Dict[str, Any]] = Field(None, description="Item metadata to update")
+    type: Optional[InputItemType] = Field(None, description="Item type")
+    default_unit_id: Optional[UUID] = Field(None, description="Default measurement unit ID")
     sort_order: Optional[int] = None
     is_active: Optional[bool] = None
     
@@ -174,6 +180,8 @@ class InputItemResponse(BaseModel):
     owner_org_id: Optional[str]
     sort_order: int
     is_active: bool
+    type: Optional[InputItemType] = None
+    default_unit_id: Optional[UUID] = None
     item_metadata: Optional[Dict[str, Any]] = Field(None, description="Item metadata (brand, composition, NPK ratio, etc.)")
     created_at: datetime
     updated_at: datetime
@@ -195,3 +203,21 @@ class InputItemResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class InputItemListResponse(BaseModel):
+    """Schema for paginated input item list response."""
+    success: bool = True
+    data: Dict[str, Any] = Field(..., description="Contains items list and pagination metadata")
+    
+    # Example structure for documentation:
+    # {
+    #   "success": true,
+    #   "data": {
+    #     "items": [...],
+    #     "total": 45474,
+    #     "page": 1,
+    #     "limit": 50,
+    #     "total_pages": 910
+    #   }
+    # }

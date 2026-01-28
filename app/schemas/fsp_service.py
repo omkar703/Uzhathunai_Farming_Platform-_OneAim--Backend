@@ -128,6 +128,13 @@ class FSPServiceListingResponse(BaseModel):
         if v is not None:
             return str(v)
         return v
+
+    @validator('service_area_districts', pre=True)
+    def validate_districts(cls, v):
+        """Convert None to empty list."""
+        if v is None:
+            return []
+        return v
     
     class Config:
         from_attributes = True
