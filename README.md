@@ -1,256 +1,119 @@
-# AggroConnect Backend
+# Uzhathunai Farming Platform - Backend
 
-**Version**: 2.0.0  
-**Type**: Agricultural Supply Chain & Farm Management API
+This repository contains the backend API services for the Uzhathunai Farming Platform v2.0. It is built using Python (FastAPI), PostgreSQL (PostGIS), and Redis, containerized with Docker.
 
-## Overview
+## Prerequisites
 
-AggroConnect Backend is a comprehensive agricultural management platform designed to streamline farming operations, supply chain management, and service provider coordination. Built with modern technologies and scalable architecture.
+Before you begin, ensure you have the following installed on your Ubuntu system:
 
-## Features
+1.  **Git**: To clone the repository.
+2.  **Docker**: To run the containers.
+3.  **Docker Compose**: To orchestrate the services.
 
-### Core Capabilities
-- 🌾 **Farm Management** - Complete farm and plot lifecycle management
-- 📊 **Crop Tracking** - Real-time crop monitoring and yield analytics
-- 🤝 **Service Provider Network** - Connect with agricultural service providers
-- 📅 **Schedule Management** - Plan and track farming activities
-- 📋 **Work Order System** - Manage tasks and assignments
-- 🔍 **Farm Audit System** - Comprehensive farm inspection and compliance
-- 💰 **Financial Tracking** - Monitor expenses and revenues
-- 📱 **Multi-tenant Architecture** - Support for multiple organizations
+### Installing Docker & Docker Compose on Ubuntu
 
-### Technical Features
-- RESTful API with OpenAPI documentation
-- JWT-based authentication
-- Role-based access control (RBAC)
-- Multi-language support (English, Tamil, Malayalam)
-- Geospatial data support with PostGIS
-- Real-time notifications
-- File upload and management
-- Video consultation integration
-
-## Technology Stack
-
-- **Framework**: FastAPI 0.104+
-- **Database**: PostgreSQL 15 with PostGIS
-- **Cache**: Redis 7
-- **Authentication**: JWT tokens
-- **Documentation**: Swagger UI / ReDoc
-- **Deployment**: Docker & Docker Compose
-
-## Quick Start
-
-### Prerequisites
-- Docker & Docker Compose
-- Python 3.11+ (for local development)
-- PostgreSQL 15+ with PostGIS (if not using Docker)
-
-### Running with Docker (Recommended)
+If you don't have them installed, run the following commands:
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd aggroconnect-backend
+# Update package index
+sudo apt-get update
 
-# Start all services
-docker compose up -d
+# Install prerequisites
+sudo apt-get install -y ca-certificates curl gnupg
 
-# View logs
-docker compose logs -f web
+# Add Docker's official GPG key
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
-# Stop services
+# Set up the repository
+echo \
+  "deb [arch=\"$(dpkg --print-architecture)\" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo \"$VERSION_CODENAME\") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Install Docker Engine
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Verify installation
+sudo docker run hello-world
+
+# Manage Docker as a non-root user (Optional but recommended)
+sudo groupadd docker
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+## Getting Started
+
+### 1. Clone the Repository
+
+Clone the project to your local machine:
+
+```bash
+git clone https://github.com/omkar703/Uzhathunai_Farming_Platform-_OneAim--Backend.git
+cd Uzhathunai_Farming_Platform-_OneAim--Backend
+```
+
+### 2. Configure Environment Variables
+
+The project comes with a default `.env` file. You can modify it if needed, but the defaults should work for local development.
+
+```bash
+cat .env
+```
+
+### 3. Build and Run Services
+
+Start the backend, database, and redis services:
+
+```bash
+# Build and start in detached mode
+docker compose up --build -d
+
+# Check the logs to ensure everything started correctly
+docker compose logs -f backend
+```
+
+*Note: The backend service is named `aggroconnect_backend` in the container list.*
+
+### 4. Seed the Database
+
+Once the containers are up and running, you need to populate the database with initial data (Master Data, FSP, Farms, Templates).
+
+Execute the seed scripts inside the backend container:
+
+```bash
+# 1. Seed Master Data (Parameters, Roles, Crops, etc.)
+docker compose exec web python seed_master_data.py
+
+# 2. Seed FSP and Farm Data (Organizations, Users, Plots)
+docker compose exec web python seed_farm_fsp_full.py
+
+# 3. Seed Templates (Audit Checklists)
+docker compose exec web python seed_liomonk_templates.py
+```
+
+### 5. Access the Application
+
+*   **API Documentation (Swagger UI):** Open [http://localhost:8000/docs](http://localhost:8000/docs) in your browser.
+*   **ReDoc:** Open [http://localhost:8000/redoc](http://localhost:8000/redoc).
+
+### 6. Common Commands
+
+```bash
+# Stop all services
 docker compose down
+
+# Restart backend service only (useful after code changes)
+docker compose restart web
+
+# Access the database shell
+docker compose exec db psql -U postgres -d farm_db
 ```
 
-### Access Points
+## Troubleshooting
 
-- **API Documentation**: http://localhost:8000/docs
-- **Alternative Docs**: http://localhost:8000/redoc
-- **Health Check**: http://localhost:8000/health
-- **API Base**: http://localhost:8000/api/v1
-
-## Project Structure
-
-```
-aggroconnect-backend/
-├── app/
-│   ├── api/              # API endpoints
-│   ├── core/             # Core configuration
-│   ├── models/           # Database models
-│   ├── schemas/          # Pydantic schemas
-│   ├── services/         # Business logic
-│   └── main.py           # Application entry point
-├── docker-compose.yml    # Docker services
-├── Dockerfile            # Container definition
-├── requirements.txt      # Python dependencies
-└── README.md            # This file
-```
-
-## API Modules
-
-### Authentication & Users
-- User registration and login
-- JWT token management
-- Password management
-- Organization switching
-
-### Organization Management
-- Multi-tenant organization support
-- Member management
-- Role assignments
-- Organization approval workflow
-
-### Farm Operations
-- Farm CRUD operations
-- Plot management
-- Crop lifecycle tracking
-- Yield recording
-- Photo documentation
-
-### Service Provider Network
-- FSP service listings
-- Marketplace browsing
-- Service booking
-- Document management
-
-### Work Management
-- Work order creation
-- Schedule templates
-- Task actuals
-- Change log tracking
-
-### Farm Audit
-- Audit templates
-- Parameter management
-- Response collection
-- Report generation
-
-### Financial Management
-- Category management
-- Transaction tracking
-- Budget monitoring
-
-## Configuration
-
-Key environment variables (create `.env` file):
-
-```bash
-# Application
-APP_NAME=AggroConnect Backend
-APP_VERSION=2.0.0
-ENVIRONMENT=development
-
-# Security
-SECRET_KEY=your-secret-key-here
-ALGORITHM=HS256
-
-# Database
-DATABASE_URL=postgresql://postgres:postgres@localhost:5433/aggroconnect_db
-
-# Redis
-REDIS_URL=redis://localhost:6379/0
-
-# CORS
-CORS_ORIGINS=http://localhost:3000,http://localhost:8000
-```
-
-## Development
-
-### Local Setup
-
-```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run database migrations
-alembic upgrade head
-
-# Start development server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### Database Migrations
-
-```bash
-# Create new migration
-alembic revision --autogenerate -m "description"
-
-# Apply migrations
-alembic upgrade head
-
-# Rollback
-alembic downgrade -1
-```
-
-## Testing
-
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=app tests/
-
-# Run specific test file
-pytest tests/test_auth.py
-```
-
-## API Authentication
-
-All protected endpoints require JWT authentication:
-
-```bash
-# Login to get token
-curl -X POST http://localhost:8000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"user@example.com","password":"password"}'
-
-# Use token in requests
-curl -X GET http://localhost:8000/api/v1/farms/ \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
-```
-
-## Deployment
-
-### Docker Production
-
-```bash
-# Build production image
-docker build -t aggroconnect-backend:latest .
-
-# Run with production settings
-docker compose -f docker-compose.prod.yml up -d
-```
-
-### Environment-Specific Configs
-
-- Development: `docker-compose.yml`
-- Production: `docker-compose.prod.yml`
-- Testing: `docker-compose.test.yml`
-
-## Support & Documentation
-
-- **API Docs**: http://localhost:8000/docs
-- **OpenAPI Spec**: http://localhost:8000/openapi.json
-- **Health Status**: http://localhost:8000/health
-
-## License
-
-Proprietary - All rights reserved
-
-## Version History
-
-### v2.0.0 (Current)
-- Complete platform rewrite
-- Multi-tenant architecture
-- Enhanced farm audit system
-- FSP marketplace integration
-- Video consultation support
-
----
-
-**Built with ❤️ for the agricultural community**
+*   **"no such service: aggroconnect_backend"**: When using `docker compose logs`, use the service name defined in `docker-compose.yml` (which is `web`), or use the container name with `docker logs aggroconnect_backend`.
+*   **Database connection failed**: Ensure the `db` container is healthy. It may take a few seconds to initialize on the first run.
