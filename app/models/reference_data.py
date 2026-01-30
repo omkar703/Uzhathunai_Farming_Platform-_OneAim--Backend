@@ -91,6 +91,23 @@ class ReferenceData(Base):
     type = relationship("ReferenceDataType", back_populates="reference_data")
     translations = relationship("ReferenceDataTranslation", back_populates="reference_data", cascade="all, delete-orphan")
 
+    @property
+    def display_name(self):
+        """
+        Return the display name from translations.
+        Prioritizes English ('en'), then falls back to the first available translation.
+        """
+        if not self.translations:
+            return self.code  # Fallback to code if no translations
+            
+        # Try to find English translation
+        for t in self.translations:
+            if t.language_code == 'en':
+                return t.display_name
+                
+        # Fallback to first available translation
+        return self.translations[0].display_name
+
 
 class ReferenceDataTranslation(Base):
     """

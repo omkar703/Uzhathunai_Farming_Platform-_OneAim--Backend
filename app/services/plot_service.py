@@ -14,7 +14,11 @@ from app.models.plot import (
     Plot, PlotWaterSource, PlotSoilType, PlotIrrigationMode
 )
 from app.models.farm import Farm
-from app.schemas.plot import PlotCreate, PlotUpdate, PlotResponse
+from app.models.reference_data import ReferenceData
+from app.schemas.plot import (
+    PlotCreate, PlotUpdate, PlotResponse,
+    PlotWaterSourceResponse, PlotSoilTypeResponse, PlotIrrigationModeResponse
+)
 from app.services.spatial_service import SpatialService
 
 logger = get_logger(__name__)
@@ -219,9 +223,9 @@ class PlotService:
             .options(
                 joinedload(Plot.farm),
                 joinedload(Plot.area_unit),
-                joinedload(Plot.water_sources),
-                joinedload(Plot.soil_types),
-                joinedload(Plot.irrigation_modes)
+                joinedload(Plot.water_sources).joinedload(PlotWaterSource.water_source).joinedload(ReferenceData.translations),
+                joinedload(Plot.soil_types).joinedload(PlotSoilType.soil_type).joinedload(ReferenceData.translations),
+                joinedload(Plot.irrigation_modes).joinedload(PlotIrrigationMode.irrigation_mode).joinedload(ReferenceData.translations)
             )
             .filter(
                 and_(
@@ -660,6 +664,9 @@ class PlotService:
             area=plot.area,
             area_unit_id=str(plot.area_unit_id) if plot.area_unit_id else None,
             plot_attributes=plot.plot_attributes,
+            water_sources=[PlotWaterSourceResponse.from_orm(ws) for ws in plot.water_sources],
+            soil_types=[PlotSoilTypeResponse.from_orm(st) for st in plot.soil_types],
+            irrigation_modes=[PlotIrrigationModeResponse.from_orm(im) for im in plot.irrigation_modes],
             is_active=plot.is_active,
             created_at=plot.created_at,
             updated_at=plot.updated_at,

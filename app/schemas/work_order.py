@@ -169,6 +169,8 @@ class WorkOrderResponse(BaseModel):
     cancelled_at: Optional[datetime]
     
     # New fields
+    farming_organization_name: Optional[str] = None
+    fsp_organization_name: Optional[str] = None
     assigned_member: Optional[UserBasicInfo] = None
     service_snapshot: Optional[ServiceSnapshot] = None
     access_granted: bool

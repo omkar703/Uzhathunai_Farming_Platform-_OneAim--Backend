@@ -4,7 +4,7 @@ sys.path.append(os.getcwd())
 
 from sqlalchemy import create_engine, text
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@db:5432/uzhathunai_db_v2")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@db:5432/farm_db")
 engine = create_engine(DATABASE_URL)
 
 def check_schema():

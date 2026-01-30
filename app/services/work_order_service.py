@@ -4,7 +4,7 @@ Handles work order CRUD operations, acceptance workflow, and status management.
 """
 from datetime import datetime
 from typing import Optional, List, Tuple
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from uuid import UUID
 
@@ -138,6 +138,7 @@ class WorkOrderService:
                 end_date=end_date,
                 total_amount=total_amount,
                 currency=currency,
+                service_snapshot={"name": title, "description": description},
                 created_by=user_id,
                 updated_by=user_id
             )
@@ -395,7 +396,10 @@ class WorkOrderService:
         )
         
         # Build query
-        query = self.db.query(WorkOrder)
+        query = self.db.query(WorkOrder).options(
+            joinedload(WorkOrder.farming_organization),
+            joinedload(WorkOrder.fsp_organization)
+        )
         
         # Apply filters
         # 1. Broad organization filter (OR)
@@ -460,7 +464,10 @@ class WorkOrderService:
             }
         )
         
-        work_order = self.db.query(WorkOrder).filter(
+        work_order = self.db.query(WorkOrder).options(
+            joinedload(WorkOrder.farming_organization),
+            joinedload(WorkOrder.fsp_organization)
+        ).filter(
             WorkOrder.id == work_order_id
         ).first()
         

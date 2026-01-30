@@ -12,6 +12,7 @@ from app.models.input_item import (
     InputItemCategory, InputItemCategoryTranslation,
     InputItem, InputItemTranslation
 )
+from app.models.measurement_unit import MeasurementUnit
 from app.schemas.input_item import (
     InputItemCategoryCreate, InputItemCategoryUpdate, InputItemCategoryResponse,
     InputItemCreate, InputItemUpdate, InputItemResponse
@@ -293,7 +294,8 @@ class InputItemService:
         include_system: bool = True,
         page: int = 1,
         limit: int = 50,
-        search: Optional[str] = None
+        search: Optional[str] = None,
+        item_type: Optional[str] = None
     ) -> dict:
         """
         Get paginated input items (system-defined and org-specific).
@@ -306,6 +308,7 @@ class InputItemService:
             page: Page number (default: 1)
             limit: Items per page (default: 50, max: 100)
             search: Optional search query for item name or code
+            item_type: Optional item type (FERTILIZER, PESTICIDE, etc.)
             
         Returns:
             Dict containing items list and pagination metadata
@@ -326,6 +329,18 @@ class InputItemService:
         # Filter by category
         if category_id:
             query = query.filter(InputItem.category_id == category_id)
+            
+        # Filter by type
+        if item_type:
+            # Join with category to filter by category code (which serves as type for system items)
+            query = query.join(InputItem.category)
+            
+            query = query.filter(
+                or_(
+                    InputItem.type == item_type,
+                    InputItemCategory.code == item_type
+                )
+            )
         
         # Filter by ownership
         if include_system:
@@ -370,7 +385,8 @@ class InputItemService:
         # Use selectinload for efficient eager loading of relationships
         items = query.options(
             selectinload(InputItem.translations),
-            selectinload(InputItem.category).selectinload(InputItemCategory.translations)
+            selectinload(InputItem.category).selectinload(InputItemCategory.translations),
+            selectinload(InputItem.default_unit).selectinload(MeasurementUnit.translations)
         ).order_by(
             InputItem.is_system_defined.desc(),
             InputItem.sort_order,
@@ -799,12 +815,55 @@ class InputItemService:
         if item.category:
             category_response = self._to_category_response(item.category, language)
         
+        # Convert default unit if present
+        default_unit_response = None
+        if item.default_unit:
+             from app.schemas.measurement_unit import MeasurementUnitResponse, MeasurementUnitTranslationResponse
+             
+             # Unit translations
+             unit_trans_list = [
+                 MeasurementUnitTranslationResponse(
+                     language_code=t.language_code,
+                     name=t.name,
+                     description=t.description
+                 ) for t in item.default_unit.translations
+             ]
+             
+             # Unit translated name
+             unit_name = None
+             for t in item.default_unit.translations:
+                 if t.language_code == language:
+                     unit_name = t.name
+                     break
+             if not unit_name: # fallback en
+                 for t in item.default_unit.translations:
+                     if t.language_code == 'en':
+                         unit_name = t.name
+                         break
+             if not unit_name: # fallback name field
+                 unit_name = item.default_unit.code.lower().capitalize() # approximation if name not on model base
+
+             default_unit_response = MeasurementUnitResponse(
+                 id=str(item.default_unit.id),
+                 category=item.default_unit.category,
+                 code=item.default_unit.code,
+                 symbol=item.default_unit.symbol,
+                 is_base_unit=item.default_unit.is_base_unit,
+                 conversion_factor=item.default_unit.conversion_factor,
+                 sort_order=item.default_unit.sort_order,
+                 name=unit_name,
+                 translations=unit_trans_list
+             )
+
         return InputItemResponse(
             id=item.id,
             code=item.code,
             category_id=item.category_id,
             is_system_defined=item.is_system_defined,
             owner_org_id=item.owner_org_id,
+            type=item.type,
+            default_unit_id=item.default_unit_id,
+            default_unit=default_unit_response,
             item_metadata=item.item_metadata,
             sort_order=item.sort_order,
             is_active=item.is_active,

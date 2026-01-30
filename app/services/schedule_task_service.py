@@ -308,6 +308,70 @@ class ScheduleTaskService:
         
         return tasks
     
+    def get_upcoming_tasks(
+        self,
+        user: User,
+        days_ahead: int = 7
+    ) -> List[Dict[str, Any]]:
+        """
+        Get upcoming incomplete tasks across all accessible schedules.
+        """
+        from app.models.schedule import Schedule
+        from app.models.crop import Crop
+        from app.models.plot import Plot
+        from app.models.farm import Farm
+        from datetime import date, timedelta
+        
+        today = date.today()
+        future_limit = today + timedelta(days=days_ahead)
+        
+        # This is a bit complex because we need to filter by accessible schedules
+        # Get accessible crop IDs
+        from app.services.schedule_service import ScheduleService
+        accessible_crop_ids = ScheduleService(self.db)._get_accessible_crop_ids(user)
+        
+        # Query tasks
+        tasks = self.db.query(ScheduleTask).join(Schedule).filter(
+            Schedule.crop_id.in_(accessible_crop_ids),
+            Schedule.is_active == True,
+            ScheduleTask.status.in_([TaskStatus.NOT_STARTED, TaskStatus.IN_PROGRESS]),
+            ScheduleTask.due_date >= today
+        ).order_by(ScheduleTask.due_date.asc()).limit(50).all()
+        
+        result = []
+        for task in tasks:
+            # Populate extra info for frontend
+            task_dict = {
+                "id": str(task.id),
+                "schedule_id": str(task.schedule_id),
+                "schedule_name": task.schedule.name,
+                "task_id": str(task.task_id),
+                "due_date": task.due_date.isoformat(),
+                "status": task.status.value,
+                "task_details": task.task_details,
+                "notes": task.notes,
+                "input_item_name": task.task_details.get("input_item_name") if task.task_details else None,
+                "application_method_name": task.task_details.get("application_method_name") if task.task_details else None,
+                "dosage": {
+                    "amount": task.task_details.get("dosage_amount"),
+                    "unit": task.task_details.get("dosage_unit"),
+                    "per": task.task_details.get("dosage_per")
+                } if task.task_details else None
+            }
+            
+            # Add farm/plot info
+            try:
+                crop = task.schedule.crop
+                if crop:
+                    task_dict["farm_name"] = crop.plot.farm.name
+                    task_dict["field_name"] = crop.plot.name
+            except:
+                pass
+                
+            result.append(task_dict)
+            
+        return result
+
     def _validate_task_access(self, user: User, schedule: Schedule) -> None:
         """
         Validate user can manage tasks for schedule.

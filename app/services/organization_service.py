@@ -641,7 +641,7 @@ class OrganizationService:
                 Organization.id == service_counts.c.fsp_organization_id
             ).filter(
                 Organization.organization_type == OrganizationType.FSP,
-                Organization.status == OrganizationStatus.ACTIVE
+                Organization.status.in_([OrganizationStatus.ACTIVE, OrganizationStatus.IN_PROGRESS])
             ).order_by(Organization.name.asc())
             
             results = query.all()

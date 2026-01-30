@@ -23,7 +23,7 @@ CREATE TYPE schedule_change_trigger AS ENUM ('MANUAL', 'QUERY', 'AUDIT');
 CREATE TYPE transaction_type AS ENUM ('INCOME', 'EXPENSE');
 CREATE TYPE permission_effect AS ENUM ('ALLOW', 'DENY');
 CREATE TYPE subscription_plan AS ENUM ('FREE', 'BASIC', 'PREMIUM', 'ENTERPRISE');
-CREATE TYPE parameter_type AS ENUM ('TEXT', 'NUMERIC', 'SINGLE_SELECT', 'MULTI_SELECT', 'DATE');
+CREATE TYPE parameter_type AS ENUM ('TEXT', 'NUMERIC', 'SINGLE_SELECT', 'MULTI_SELECT', 'DATE', 'BOOLEAN', 'PHOTO');
 CREATE TYPE audit_status AS ENUM ('DRAFT', 'IN_PROGRESS', 'SUBMITTED', 'REVIEWED', 'FINALIZED', 'SHARED');
 CREATE TYPE measurement_unit_category AS ENUM ('AREA', 'VOLUME', 'WEIGHT', 'LENGTH', 'COUNT');
 CREATE TYPE task_category AS ENUM ('FARMING', 'FSP_CONSULTANCY');
@@ -406,6 +406,8 @@ CREATE TABLE crop_variety_translations (
     UNIQUE(crop_variety_id, language_code)
 );
 
+CREATE TYPE input_item_type AS ENUM ('FERTILIZER', 'PESTICIDE', 'OTHER');
+
 -- Input item categories and items (system and organization-specific)
 CREATE TABLE input_item_categories (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -455,6 +457,8 @@ CREATE TABLE input_items (
     owner_org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
     sort_order INTEGER DEFAULT 0,
     is_active BOOLEAN DEFAULT true,
+    type input_item_type,
+    default_unit_id UUID REFERENCES measurement_units(id),
     item_metadata JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -470,6 +474,10 @@ CREATE TABLE input_items (
 CREATE INDEX idx_input_items_category ON input_items(category_id);
 CREATE INDEX idx_input_items_owner ON input_items(owner_org_id);
 CREATE INDEX idx_input_items_system ON input_items(is_system_defined);
+CREATE UNIQUE INDEX idx_input_items_system_code ON input_items(code, is_system_defined) WHERE is_system_defined = TRUE;
+
+-- Partial unique index for system-defined categories
+CREATE UNIQUE INDEX idx_input_item_categories_system_code ON input_item_categories(code, is_system_defined) WHERE is_system_defined = TRUE;
 
 COMMENT ON TABLE input_items IS 'Input items like fertilizers, pesticides (system-defined and organization-specific)';
 COMMENT ON COLUMN input_items.is_system_defined IS 'true for system-defined items, false for organization-specific';
@@ -1081,6 +1089,7 @@ CREATE TABLE work_orders (
     end_date DATE,
     total_amount DECIMAL(15, 2),
     currency VARCHAR(10) DEFAULT 'INR',
+    service_snapshot JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_by UUID REFERENCES users(id),
@@ -1096,6 +1105,8 @@ CREATE TABLE work_orders (
         )
     )
 );
+
+COMMENT ON COLUMN work_orders.service_snapshot IS 'JSONB snapshot of service details at the time of creation: {"name": "...", "description": "..."}';
 
 CREATE INDEX idx_work_orders_farming_org ON work_orders(farming_organization_id);
 CREATE INDEX idx_work_orders_fsp_org ON work_orders(fsp_organization_id);

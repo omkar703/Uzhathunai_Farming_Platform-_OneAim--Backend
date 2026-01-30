@@ -126,7 +126,7 @@ class SectionStructureResponse(BaseModel):
     """Schema for section structure in audit"""
     section_id: str
     code: str
-    translations: Dict[str, Dict[str, str]]
+    translations: Dict[str, Dict[str, Optional[str]]]
     parameters: List[ParameterInstanceResponse]
 
 
@@ -136,7 +136,7 @@ class AuditStructureResponse(BaseModel):
     audit_number: Optional[str]
     name: str
     status: str
-    template_snapshot: Dict[str, Any]
+    template_snapshot: Optional[Dict[str, Any]] = None
     sections: List[SectionStructureResponse]
 
 
@@ -171,6 +171,7 @@ class ResponseSubmit(BaseModel):
         }
 
 
+
 class ResponseUpdate(BaseModel):
     """Schema for updating an audit response"""
     response_text: Optional[str] = Field(None, description="Text response for TEXT parameters")
@@ -181,16 +182,52 @@ class ResponseUpdate(BaseModel):
     evidence_urls: Optional[List[str]] = Field(None, description="List of evidence photo URLs")
 
 
+class ResponseBulkSubmit(BaseModel):
+    """Schema for bulk submitting audit responses"""
+    responses: List[ResponseSubmit]
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "responses": [
+                    {
+                        "audit_parameter_instance_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "response_numeric": 45.5,
+                        "notes": "Plant height measured at base"
+                    },
+                    {
+                        "audit_parameter_instance_id": "123e4567-e89b-12d3-a456-426614174001",
+                        "response_text": "Green",
+                        "notes": "Healthy leaf color"
+                    }
+                ]
+            }
+        }
+
+
+
 class AuditResponseDetail(BaseModel):
     """Schema for audit response detail"""
     id: UUID
     audit_id: UUID
     audit_parameter_instance_id: UUID
+    
+    # Metadata fields
+    parameter_name: Optional[str] = None
+    parameter_type: Optional[str] = None
+    parameter_code: Optional[str] = None
+    
+    # Response values
     response_text: Optional[str]
     response_numeric: Optional[float]
     response_date: Optional[date]
     response_options: Optional[List[UUID]]
+    response_option_labels: Optional[List[str]] = None
+    
+    # Evidence & Notes
     notes: Optional[str]
+    evidence_urls: Optional[List[str]] = None
+    
     created_at: datetime
     updated_at: datetime
     created_by: Optional[UUID]
@@ -441,7 +478,7 @@ class IssueListResponse(BaseModel):
 
 class RecommendationCreate(BaseModel):
     """Schema for creating a recommendation"""
-    schedule_id: UUID = Field(..., description="UUID of the schedule to modify")
+    schedule_id: Optional[UUID] = Field(None, description="UUID of the schedule to modify (Optional, auto-detected from audit if missing)")
     change_type: str = Field(..., description="Type of change: ADD, MODIFY, DELETE")
     task_id: Optional[UUID] = Field(None, description="UUID of schedule task (for MODIFY/DELETE)")
     task_details_before: Optional[Dict[str, Any]] = Field(None, description="Task details before change (NULL for ADD)")

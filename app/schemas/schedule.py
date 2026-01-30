@@ -253,6 +253,10 @@ class ScheduleTaskResponse(BaseModel):
     updated_at: datetime
     created_by: UUID
     updated_by: UUID
+    scheduled_date: Optional[date] = None
+    task_name: Optional[str] = None
+    input_item_name: Optional[str] = None
+    application_method_name: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -274,6 +278,12 @@ class ScheduleResponse(BaseModel):
     updated_at: datetime
     created_by: UUID
     updated_by: UUID
+    start_date: Optional[date] = None
+    field_name: Optional[str] = None
+    fsp_name: Optional[str] = None
+    is_fsp_created: bool = False
+    total_tasks: int = 0
+    completed_tasks: int = 0
     
     class Config:
         from_attributes = True
@@ -310,6 +320,15 @@ class ScheduleWithTasksResponse(BaseModel):
     updated_at: datetime
     created_by: UUID
     updated_by: UUID
+    start_date: Optional[date] = None
+    farm_name: Optional[str] = None
+    crop_name: Optional[str] = None
+    field_name: Optional[str] = None
+    fsp_name: Optional[str] = None
+    is_fsp_created: bool = False
+    total_tasks: int = 0
+    completed_tasks: int = 0
+    items: Optional[List[ScheduleTaskResponse]] = None
     
     class Config:
         from_attributes = True

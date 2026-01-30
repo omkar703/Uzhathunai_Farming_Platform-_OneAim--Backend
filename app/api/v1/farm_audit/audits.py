@@ -7,7 +7,7 @@ from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
 import io
-from fastapi import APIRouter, Depends, Query, status, UploadFile, File, Form, Body, BackgroundTasks
+from fastapi import APIRouter, Depends, Query, Path, HTTPException, status, Request, UploadFile, File, Form, Body, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_active_user
@@ -22,6 +22,7 @@ from app.schemas.audit import (
     AuditStructureResponse,
     ResponseSubmit,
     ResponseUpdate,
+    ResponseBulkSubmit,
     AuditResponseDetail,
     AuditResponseListResponse,
     PhotoUploadResponse,
@@ -454,6 +455,152 @@ def update_response(
     }
 
 
+@router.put(
+    "/audits/{audit_id}/responses/{response_id}/flag",
+    response_model=BaseResponse[dict],
+    summary="Toggle flag on audit response",
+    description="Toggle the flagged status of a response for report generation"
+)
+def toggle_response_flag(
+    audit_id: UUID,
+    response_id: UUID,
+    data: FlagRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Toggle flag details for an audit response.
+    
+    This is used during curation to mark responses for inclusion in the final report.
+    """
+    logger.info(
+        "Toggling response flag via API",
+        extra={
+            "user_id": str(current_user.id),
+            "audit_id": str(audit_id),
+            "response_id": str(response_id),
+            "is_flagged": data.is_flagged
+        }
+    )
+
+    from app.services.review_service import ReviewService
+    service = ReviewService(db)
+    
+    # Check if a review exists for this response
+    review = service.get_review_by_response(audit_id, response_id)
+    
+    if review:
+        # Update existing review
+        updated_review = service.update_review_flag(audit_id, review.id, data.is_flagged, current_user.id)
+        result = updated_review
+    else:
+        # Create new review entry solely for the flag
+        review_data = ReviewCreate(
+            audit_response_id=response_id,
+            is_flagged_for_report=data.is_flagged,
+            reviewer_comment="" # Empty comment for simple flag
+        )
+        result = service.create_review(audit_id, review_data, current_user.id)
+
+    return {
+        "success": True,
+        "message": "Flag updated successfully",
+        "data": {
+            "id": str(result.id),
+            "is_flagged": result.is_flagged_for_report
+        }
+    }
+
+
+from fastapi import Request
+from fastapi.concurrency import run_in_threadpool
+
+@router.post(
+    "/audits/{audit_id}/responses/save",
+    response_model=BaseResponse[AuditResponseListResponse],
+    summary="Save audit responses",
+    description="Save multiple responses for an audit (Simplified endpoint)"
+)
+async def save_audit_responses(
+    audit_id: UUID,
+    request: Request,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Save multiple responses to audit parameters.
+    Uses generic Request object to bypass validation caching issues and provide deep debugging.
+    """
+    print(f"DEBUG: [SimpleSave] Entered async endpoint for audit {audit_id}", flush=True)
+    
+    try:
+        # 1. Read Raw Body
+        body_bytes = await request.body()
+        print(f"DEBUG: [SimpleSave] Raw body length: {len(body_bytes)} bytes", flush=True)
+        
+        if len(body_bytes) == 0:
+             print("DEBUG: [SimpleSave] Empty body received!", flush=True)
+             return {
+                "success": False,
+                "message": "Empty request body",
+                "data": {"items": [], "total": 0}
+            }
+
+        # 2. Parse JSON
+        json_data = await request.json()
+        print(f"DEBUG: [SimpleSave] JSON parsed, type: {type(json_data)}", flush=True)
+        
+        # 3. Manual Validation / Reconstruction
+        # Expecting List[Dict] directly
+        if isinstance(json_data, list):
+            responses_data = json_data
+        elif isinstance(json_data, dict) and "responses" in json_data:
+            responses_data = json_data["responses"]
+        else:
+            print(f"DEBUG: [SimpleSave] Unexpected format: {json_data}", flush=True)
+            responses_data = []
+
+        print(f"DEBUG: [SimpleSave] Processing {len(responses_data)} items", flush=True)
+
+        # Convert to Pydantic models manually to ensure valid data for service
+        pydantic_responses = []
+        for item in responses_data:
+            pydantic_responses.append(ResponseSubmit(**item))
+
+        # 4. Service Call (in threadpool)
+        print("DEBUG: [SimpleSave] Initialising ResponseService", flush=True)
+        service = ResponseService(db)
+        
+        bulk_data = ResponseBulkSubmit(responses=pydantic_responses)
+        
+        print("DEBUG: [SimpleSave] Awaiting service.submit_bulk_responses in threadpool", flush=True)
+        t_start = datetime.now()
+        
+        # run_in_threadpool is essential for async def calling sync DB code
+        saved_responses = await run_in_threadpool(
+            service.submit_bulk_responses,
+            audit_id=audit_id,
+            data=bulk_data,
+            user_id=current_user.id
+        )
+        
+        duration = (datetime.now() - t_start).total_seconds()
+        print(f"DEBUG: [SimpleSave] Service call completed in {duration}s", flush=True)
+
+        return {
+            "success": True,
+            "message": "Responses saved successfully",
+            "data": {
+                "items": saved_responses,
+                "total": len(saved_responses)
+            }
+        }
+    except Exception as e:
+        print(f"ERROR: [SimpleSave] Failed: {e}", flush=True)
+        logger.error(f"Save responses failed: {e}", exc_info=True)
+        raise
+
+
 @router.get(
     "/audits/{audit_id}/responses",
     response_model=BaseResponse[AuditResponseListResponse],
@@ -749,7 +896,7 @@ async def capture_snapshot(
     summary="Transition audit status",
     description="Transition audit to a new status with validation"
 )
-def transition_audit_status(
+async def transition_audit_status(
     audit_id: UUID,
     data: StatusTransitionRequest,
     current_user: User = Depends(get_current_active_user),
@@ -774,6 +921,7 @@ def transition_audit_status(
     
     **Requirements: 10.1, 18.3**
     """
+    print(f"DEBUG: [AsyncTransition] Entered endpoint for audit {audit_id}", flush=True)
     logger.info(
         "Transitioning audit status via API",
         extra={
@@ -794,12 +942,19 @@ def transition_audit_status(
             details={"status": data.to_status}
         )
 
+    print(f"DEBUG: [AsyncTransition] Calling WorkflowService.transition_status for audit {audit_id} to {target_status}")
     service = WorkflowService(db)
-    audit = service.transition_status(
+    
+    # Use run_in_threadpool to unblock event loop during heavy transition logic (emails, PDF, etc.)
+    t_start = datetime.now()
+    audit = await run_in_threadpool(
+        service.transition_status,
         audit_id=audit_id,
         to_status=target_status,
         user_id=current_user.id
     )
+    duration = (datetime.now() - t_start).total_seconds()
+    print(f"DEBUG: [AsyncTransition] Transition completed in {duration}s", flush=True)
 
     return {
         "success": True,

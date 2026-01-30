@@ -51,25 +51,35 @@ def run_sql_file(db: Session, filename: str):
         logger.error(f"SQL file not found: {filepath}")
         return
 
-    logger.info(f"Executing SQL script: {filename}")
-    with open(filepath, "r") as f:
-        sql_content = f.read()
-        # Simple split by ';' might be fragile for complex PL/PGSQL or strings containing semicolons.
-        # But for standard seed scripts it's usually okay if we execute as one block or split carefully.
-        # SQLAlchemy execute(text()) can handle multiple statements if supported by driver, 
-        # but often it's safer to read the whole file and let the DB execute it.
-        # However, psycopg2 usually prefers one statement per execute unless configured otherwise.
-        # Let's try executing the whole block first.
-        try:
-            db.execute(text(sql_content))
-            db.commit()
-            logger.info(f"Successfully executed {filename}")
-        except Exception as e:
-            logger.error(f"Failed to execute {filename}: {e}")
-            db.rollback()
-            # If it fails, we might want to exit or continue based on severity.
-            # DDL failure is critical. DML failure might be due to duplicates.
+    logger.info(f"Executing SQL script via psql: {filename}")
+    
+    # Use psql command line tool for better reliability with large scripts
+    # We use the DATABASE_URL from environment which should be available
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        logger.error("DATABASE_URL not found in environment")
+        return
+
+    import subprocess
+    try:
+        # Run psql command
+        result = subprocess.run(
+            ['psql', db_url, '-f', filepath],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        logger.info(f"Successfully executed {filename}")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to execute {filename} via psql: {e.stderr}")
+        # In case of DDL/DML errors, we might want to know if it's already applied
+        if "already exists" in e.stderr.lower():
+            logger.warning(f"Note: Some objects in {filename} may already exist.")
+        else:
             raise e
+    except Exception as e:
+        logger.error(f"Unexpected error executing {filename}: {e}")
+        raise e
 
 def initialize_db():
     wait_for_db()
@@ -115,6 +125,70 @@ def initialize_db():
         if not result.scalar():
             logger.info("Missing is_approved column. Running 004_add_is_approved_to_orgs.sql...")
             run_sql_file(db, "004_add_is_approved_to_orgs.sql")
+
+        # Check 005: User Profile Fields (bio, address, etc)
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name='users' AND column_name='bio')"
+        ))
+        if not result.scalar():
+            logger.info("Missing user profile fields. Running 005_add_user_profile_fields.sql...")
+            run_sql_file(db, "005_add_user_profile_fields.sql")
+
+        # Check 006: User Specialization
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name='users' AND column_name='specialization')"
+        ))
+        if not result.scalar():
+            logger.info("Missing user specialization column. Running 006_add_user_specialization.sql...")
+            run_sql_file(db, "006_add_user_specialization.sql")
+
+        # Check 007: Audit Assignments
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name='audits' AND column_name='assigned_to_user_id')"
+        ))
+        if not result.scalar():
+            logger.info("Missing audit assignment columns. Running 007_audit_assignments.sql...")
+            run_sql_file(db, "007_audit_assignments.sql")
+
+        # Check 008: Chat Module
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'chat_channels')"
+        ))
+        if not result.scalar():
+            logger.info("Missing chat module tables. Running 008_chat_module.sql...")
+            run_sql_file(db, "008_chat_module.sql")
+
+        # Check 009: Work Order Assignment
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name='work_orders' AND column_name='assigned_to_user_id')"
+        ))
+        if not result.scalar():
+            logger.info("Missing work order assignment column. Running 009_work_order_assignment.sql...")
+            run_sql_file(db, "009_work_order_assignment.sql")
+
+        # Check: City in Farms
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name='farms' AND column_name='city')"
+        ))
+        if not result.scalar():
+            logger.info("Missing city column in farms. Running migration_add_city_to_farms.sql...")
+            run_sql_file(db, "migration_add_city_to_farms.sql")
+
+        # Check 010: Work Order Access Granted
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name='work_orders' AND column_name='access_granted')"
+        ))
+        if not result.scalar():
+            logger.info("Missing work order access_granted column. Running 010_add_work_order_access_granted.sql...")
+            run_sql_file(db, "010_add_work_order_access_granted.sql")
+
+        # Check 011: Audit Has Report
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name='audits' AND column_name='has_report')"
+        ))
+        if not result.scalar():
+            logger.info("Missing audit has_report column. Running 011_add_audit_has_report.sql...")
+            run_sql_file(db, "011_add_audit_has_report.sql")
 
 
         # Check if Roles exist (Seed Data)

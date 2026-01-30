@@ -28,6 +28,13 @@ class ParameterTranslationResponse(ParameterTranslationBase):
         from_attributes = True
 
 
+# Inline Option schema
+class InlineOption(BaseModel):
+    """Schema for inline options provided during parameter creation."""
+    label: str = Field(..., min_length=1)
+    value: str = Field(..., min_length=1)
+
+
 # Parameter schemas
 class ParameterBase(BaseModel):
     """Base schema for parameter."""
@@ -73,6 +80,9 @@ class ParameterCreate(ParameterBase):
     """Schema for creating a parameter."""
     translations: List[Dict[str, Any]] = Field(..., min_items=1)
     option_set_ids: Optional[List[UUID]] = Field(default=[])
+    # Fields to support inline options from frontend
+    options: Optional[List[InlineOption]] = Field(default=None)
+    option_set: Optional[List[InlineOption]] = Field(default=None)
     
     @validator('translations')
     def validate_translations(cls, v):
@@ -88,8 +98,13 @@ class ParameterCreate(ParameterBase):
         if 'parameter_type' in values:
             param_type = values['parameter_type']
             if param_type in [ParameterType.SINGLE_SELECT, ParameterType.MULTI_SELECT]:
-                if not v or len(v) == 0:
-                    raise ValueError(f'{param_type.value} parameters must have at least one option set')
+                # Allow either option_set_ids or inline options/option_set
+                has_inline = (
+                    (values.get('options') and len(values['options']) > 0) or 
+                    (values.get('option_set') and len(values['option_set']) > 0)
+                )
+                if not has_inline and (not v or len(v) == 0):
+                    raise ValueError(f'{param_type.value} parameters must have at least one option set or inline options')
         return v
 
 
@@ -99,6 +114,8 @@ class ParameterUpdate(BaseModel):
     parameter_metadata: Optional[Dict[str, Any]] = None
     translations: Optional[List[Dict[str, Any]]] = None
     option_set_ids: Optional[List[UUID]] = None
+    options: Optional[List[InlineOption]] = None
+    option_set: Optional[List[InlineOption]] = None
     
     @validator('parameter_metadata')
     def validate_parameter_metadata(cls, v):
@@ -140,6 +157,7 @@ class ParameterResponse(ParameterBase):
     name: Optional[str] = None
     translations: List[ParameterTranslationResponse] = []
     option_set_ids: List[UUID] = []
+    option_set: List[InlineOption] = []  # Detailed options for frontend
     
     class Config:
         from_attributes = True

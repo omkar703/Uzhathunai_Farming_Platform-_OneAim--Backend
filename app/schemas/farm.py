@@ -197,10 +197,11 @@ class FarmWaterSourceResponse(BaseModel):
     @validator('reference_data', pre=True)
     def get_reference_data(cls, v, values):
         """Get reference data from water_source relationship."""
-        # If it's already a dict/object, return as is
+        # If it's already a dict/object that matches ReferenceDataNested
         if isinstance(v, dict):
             return v
-        # Otherwise, it should be loaded from the relationship
+        if hasattr(v, '__dict__'):
+            return v # Let Pydantic from_attributes handle it
         return v
     
     class Config:
@@ -225,10 +226,10 @@ class FarmSoilTypeResponse(BaseModel):
     @validator('reference_data', pre=True)
     def get_reference_data(cls, v, values):
         """Get reference data from soil_type relationship."""
-        # If it's already a dict/object, return as is
         if isinstance(v, dict):
             return v
-        # Otherwise, it should be loaded from the relationship
+        if hasattr(v, '__dict__'):
+            return v # Let Pydantic from_attributes handle it
         return v
     
     class Config:
@@ -253,10 +254,10 @@ class FarmIrrigationModeResponse(BaseModel):
     @validator('reference_data', pre=True)
     def get_reference_data(cls, v, values):
         """Get reference data from irrigation_mode relationship."""
-        # If it's already a dict/object, return as is
         if isinstance(v, dict):
             return v
-        # Otherwise, it should be loaded from the relationship
+        if hasattr(v, '__dict__'):
+            return v # Let Pydantic from_attributes handle it
         return v
     
     class Config:

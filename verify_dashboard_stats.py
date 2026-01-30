@@ -12,7 +12,7 @@ from app.models import Organization, OrgMember, User
 from app.models.enums import OrganizationType, MemberStatus
 
 # Database configuration (using internal docker address)
-DATABASE_URL = "postgresql://postgres:postgres@db:5432/uzhathunai_db_v2"
+DATABASE_URL = "postgresql://postgres:postgres@db:5432/farm_db"
 
 def verify_dashboard():
     engine = create_engine(DATABASE_URL)

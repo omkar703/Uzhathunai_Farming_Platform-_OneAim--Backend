@@ -51,6 +51,7 @@ class Audit(Base):
     analyst_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     has_report = Column(Boolean, default=False)
 
+
     # Relationships
     fsp_organization = relationship("Organization", foreign_keys=[fsp_organization_id])
     farming_organization = relationship("Organization", foreign_keys=[farming_organization_id])
@@ -166,12 +167,11 @@ class AuditResponsePhoto(Base):
     __tablename__ = "audit_response_photos"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    audit_id = Column(UUID(as_uuid=True), ForeignKey("audits.id", ondelete="CASCADE"), nullable=True, index=True)
+    audit_id = Column(UUID(as_uuid=True), ForeignKey("audits.id", ondelete="CASCADE"), nullable=False, index=True)
     audit_response_id = Column(UUID(as_uuid=True), ForeignKey("audit_responses.id", ondelete="CASCADE"), nullable=True)
     file_url = Column(String(500), nullable=False)
     file_key = Column(String(500), nullable=True)
     caption = Column(Text, nullable=True)
-    source_type = Column(SQLEnum(PhotoSourceType, name='photo_source_type'), default=PhotoSourceType.MANUAL_UPLOAD, nullable=False)
     uploaded_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
@@ -181,7 +181,7 @@ class AuditResponsePhoto(Base):
     uploader = relationship("User", foreign_keys=[uploaded_by])
 
     def __repr__(self):
-        return f"<AuditResponsePhoto(id={self.id}, response_id={self.audit_response_id})>"
+        return f"<AuditResponsePhoto(id={self.id}, audit_id={self.audit_id}, response_id={self.audit_response_id})>"
 
 
 class AuditReview(Base):

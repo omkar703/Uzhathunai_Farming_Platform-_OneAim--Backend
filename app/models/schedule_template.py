@@ -71,6 +71,34 @@ class ScheduleTemplate(Base):
     creator = relationship("User", foreign_keys=[created_by])
     updater = relationship("User", foreign_keys=[updated_by])
     
+    @property
+    def name(self):
+        """Get translated name (fallback to English or first available)."""
+        if not self.translations:
+            return None
+            
+        # Try English first
+        for t in self.translations:
+            if t.language_code == 'en':
+                return t.name
+                
+        # Fallback to first available
+        return self.translations[0].name
+        
+    @property
+    def description(self):
+        """Get translated description (fallback to English or first available)."""
+        if not self.translations:
+            return None
+            
+        # Try English first
+        for t in self.translations:
+            if t.language_code == 'en':
+                return t.description
+                
+        # Fallback to first available
+        return self.translations[0].description
+    
     def __repr__(self):
         return f"<ScheduleTemplate(id={self.id}, code={self.code}, is_system={self.is_system_defined})>"
 

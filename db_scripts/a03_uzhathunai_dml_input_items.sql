@@ -15,6 +15,7 @@ SELECT id, 'FE_EDTA_12%', true, 1, true, '{"trade_name": "Fe EDTA 12%", "brand":
 SELECT id, 'ZN_EDTA_12%', true, 1, true, '{"trade_name": "Zn EDTA 12%", "brand": "Multi-brands", "category": "chelates (Zn)", "nutrients": ["Zinc (Zn) 12% (as Zn-EDTA chelate)"], "npk_ratio": "Zn 12%", "form": "water soluble chelated powder", "solubility": "high", "manufacturer": "Multi-brands (e.g., ZinGap, Sahib)", "storage_instructions": "Store dry; avoid alkaline mixing", "additional": {"application": "foliar spray and fertigation"}}'::jsonb FROM input_item_categories WHERE code = 'FERTILIZER' UNION ALL 
 SELECT id, 'CA_EDTA_(CHELATED_CALCIUM)', true, 1, true, '{"trade_name": "Ca EDTA (Chelated Calcium)", "brand": "Multi-brands", "category": "chelates (Ca)", "nutrients": ["Calcium (Ca) ~10% (typical Ca-EDTA)"], "npk_ratio": "Ca ~10%", "form": "water soluble chelated powder/liquid", "solubility": "high", "manufacturer": "Multi-brands", "storage_instructions": "Store cool dry; label dependent", "additional": {"note": "Chelated calcium useful for foliar correction where Ca uptake is limited"}}'::jsonb FROM input_item_categories WHERE code = 'FERTILIZER' UNION ALL 
 SELECT id, 'AMMONIUM_SULPHATE', true, 1, true, '{"trade_name": "Ammonium Sulphate", "brand": "Multi-brands", "category": "macronutrient (N,S)", "nutrients": ["Nitrogen 21% (as NH4)", "Sulfur ~24% (as SO4)"], "npk_ratio": "21-0-0; S ~24%", "form": "granular / crystalline", "solubility": "water soluble", "manufacturer": "Multi-brands (e.g., Coromandel, Nagarjuna)", "storage_instructions": "Store dry; hygroscopic; keep away from alkalies", "additional": {"common_uses": "acidifying nitrogen source; soil and fertigation use"}}'::jsonb FROM input_item_categories WHERE code = 'FERTILIZER'
+ON CONFLICT (code, is_system_defined) WHERE is_system_defined = TRUE DO NOTHING;
 
 INSERT INTO input_item_translations (input_item_id, language_code, name) VALUES 
 ((SELECT id from input_items where code='POTASSIUM_NITRATE') , 'en', 'Potassium Nitrate'), 
@@ -64,7 +65,8 @@ INSERT INTO input_item_translations (input_item_id, language_code, name) VALUES
 ((SELECT id from input_items where code='FE_EDTA_12%') , 'ml', 'Fe EDTA 12%'), 
 ((SELECT id from input_items where code='ZN_EDTA_12%') , 'ml', 'Zn EDTA 12%'), 
 ((SELECT id from input_items where code='CA_EDTA_(CHELATED_CALCIUM)') , 'ml', 'Ca EDTA (ചീലേറ്റഡ് കാൽസ്യം)'), 
-((SELECT id from input_items where code='AMMONIUM_SULPHATE') , 'ml', 'അമോണിയം സൾഫേറ്റ്');
+((SELECT id from input_items where code='AMMONIUM_SULPHATE') , 'ml', 'അമോണിയം സൾഫേറ്റ്')
+ON CONFLICT (input_item_id, language_code) DO NOTHING;
 
 
 INSERT INTO input_items (category_id, code, is_system_defined, sort_order, is_active, item_metadata)
@@ -97,7 +99,8 @@ SELECT id, 'SAFINA', true, 1, true, '{"trade_name": "Safina", "brand": "Multiple
 SELECT id, 'SUMIPREMPT', true, 1, true, '{"trade_name": "Sumiprempt", "brand": "Sumitomo", "category": "insecticide (mix)", "active_ingredients": ["Pyriproxyfen 5% + Fenpropathrin 15% EC"], "mode_of_action": ["growth regulator + sodium channel modulator"], "effective_against": ["whiteflies", "borers"], "application_method": ["foliar spray"], "form": "EC", "solubility": "emulsifiable", "manufacturer": "Sumitomo", "storage_instructions": "Store cool dry.", "additional": {}}'::jsonb FROM input_item_categories WHERE code = 'PESTICIDE' UNION ALL 
 SELECT id, 'CUSTODIA', true, 1, true, '{"trade_name": "Custodia", "brand": "Adama", "category": "fungicide (mix)", "active_ingredients": ["Azoxystrobin 11% + Tebuconazole 18.3% SC"], "mode_of_action": ["QoI + DMI"], "effective_against": ["broad fungal diseases"], "application_method": ["foliar spray"], "form": "SC", "solubility": "suspension", "manufacturer": "Adama", "storage_instructions": "Store cool dry.", "additional": {}}'::jsonb FROM input_item_categories WHERE code = 'PESTICIDE' UNION ALL 
 SELECT id, 'SALIBRO', true, 1, true, '{"trade_name": "Salibro", "brand": "Corteva", "category": "nematicide", "active_ingredients": ["(Corteva SKU)"], "mode_of_action": ["nematicidal"], "effective_against": ["nematodes"], "application_method": ["soil application"], "form": "liquid", "solubility": "varies", "manufacturer": "Corteva", "storage_instructions": "Store cool dry.", "additional": {}}'::jsonb FROM input_item_categories WHERE code = 'PESTICIDE' UNION ALL 
-SELECT id, 'TAGMYCIN', true, 1, true, '{"trade_name": "Tagmycin", "brand": "Multiple", "category": "bactericide (antibiotic)", "active_ingredients": ["Streptomycin + Tetracycline"], "mode_of_action": ["bactericidal"], "effective_against": ["bacterial leaf spots"], "application_method": ["foliar spray"], "form": "powder", "solubility": "water soluble", "manufacturer": "Multiple", "storage_instructions": "Store away from sunlight.", "additional": {"regulatory_note": "Use regulated"}}'::jsonb FROM input_item_categories WHERE code = 'PESTICIDE';
+SELECT id, 'TAGMYCIN', true, 1, true, '{"trade_name": "Tagmycin", "brand": "Multiple", "category": "bactericide (antibiotic)", "active_ingredients": ["Streptomycin + Tetracycline"], "mode_of_action": ["bactericidal"], "effective_against": ["bacterial leaf spots"], "application_method": ["foliar spray"], "form": "powder", "solubility": "water soluble", "manufacturer": "Multiple", "storage_instructions": "Store away from sunlight.", "additional": {"regulatory_note": "Use regulated"}}'::jsonb FROM input_item_categories WHERE code = 'PESTICIDE'
+ON CONFLICT (code, is_system_defined) WHERE is_system_defined = TRUE DO NOTHING;
 
 
 INSERT INTO input_item_translations (input_item_id, language_code, name) VALUES 
@@ -190,4 +193,5 @@ INSERT INTO input_item_translations (input_item_id, language_code, name) VALUES
 ((SELECT id from input_items where code='SUMIPREMPT') , 'ml', 'സുമിപ്രേംപ്റ്റ്'), 
 ((SELECT id from input_items where code='CUSTODIA') , 'ml', 'കസ്റ്റോഡിയ'), 
 ((SELECT id from input_items where code='SALIBRO') , 'ml', 'സാലിബ്രോ'), 
-((SELECT id from input_items where code='TAGMYCIN') , 'ml', 'ടാഗ്മൈസിൻ');
+((SELECT id from input_items where code='TAGMYCIN') , 'ml', 'ടാഗ്മൈസിൻ')
+ON CONFLICT (input_item_id, language_code) DO NOTHING;

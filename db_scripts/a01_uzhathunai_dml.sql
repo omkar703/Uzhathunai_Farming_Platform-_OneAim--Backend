@@ -533,7 +533,8 @@ INSERT INTO input_item_categories (code, is_system_defined, owner_org_id, sort_o
 ('PESTICIDE', true, NULL, 2, true),
 ('HERBICIDE', true, NULL, 3, true),
 ('FYM', true, NULL, 4, true),
-('GROWTH_REGULATOR', true, NULL, 5, true);
+('GROWTH_REGULATOR', true, NULL, 5, true)
+ON CONFLICT (code, is_system_defined) WHERE is_system_defined = TRUE DO NOTHING;
 
 -- Input item category translations
 INSERT INTO input_item_category_translations (category_id, language_code, name)
@@ -573,7 +574,8 @@ SELECT id, 'UREA', true, 1, true, '{"npk": "46-0-0"}'::jsonb FROM input_item_cat
 UNION ALL
 SELECT id, 'DAP', true, 2, true, '{"npk": "18-46-0"}'::jsonb FROM input_item_categories WHERE code = 'FERTILIZER'
 UNION ALL
-SELECT id, 'NPK_19_19_19', true, 3, true, '{"npk": "19-19-19"}'::jsonb FROM input_item_categories WHERE code = 'FERTILIZER';
+SELECT id, 'NPK_19_19_19', true, 3, true, '{"npk": "19-19-19"}'::jsonb FROM input_item_categories WHERE code = 'FERTILIZER'
+ON CONFLICT (code, is_system_defined) WHERE is_system_defined = TRUE DO NOTHING;
 
 -- Input item translations
 INSERT INTO input_item_translations (input_item_id, language_code, name)

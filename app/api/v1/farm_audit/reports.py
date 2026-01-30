@@ -78,7 +78,7 @@ def verify_audit_access(db: Session, user: User, audit_id: UUID, action: str = "
     except PermissionError:
         pass
 
-    raise PermissionError(message="Insufficient permissions for this audit")
+    raise PermissionError("Insufficient permissions for this audit", "PERMISSION_DENIED")
 
 
 @router.get(

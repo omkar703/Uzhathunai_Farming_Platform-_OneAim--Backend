@@ -136,22 +136,19 @@ def get_schedule(
     db: Session = Depends(get_db)
 ):
     """Get schedule details with tasks."""
-    from app.models.schedule import Schedule
-    from app.core.exceptions import NotFoundError
-    
-    schedule = db.query(Schedule).filter(
-        Schedule.id == schedule_id,
-        Schedule.is_active == True
-    ).first()
-    
-    if not schedule:
-        raise NotFoundError(
-            message=f"Schedule {schedule_id} not found",
-            error_code="SCHEDULE_NOT_FOUND",
-            details={"schedule_id": str(schedule_id)}
-        )
-    
-    return schedule
+    service = ScheduleService(db)
+    return service.get_schedule_with_details(user=current_user, schedule_id=schedule_id)
+
+
+@router.get("/tasks/upcoming", response_model=list)
+def get_upcoming_tasks(
+    days_ahead: int = Query(7, ge=1, le=30),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get upcoming tasks from all accessible schedules."""
+    service = ScheduleTaskService(db)
+    return service.get_upcoming_tasks(user=current_user, days_ahead=days_ahead)
 
 
 @router.post("/{schedule_id}/tasks", response_model=ScheduleTaskResponse)

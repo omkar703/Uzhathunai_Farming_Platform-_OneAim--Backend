@@ -99,6 +99,7 @@ class InputItem(Base):
     creator = relationship("User", foreign_keys=[created_by])
     updater = relationship("User", foreign_keys=[updated_by])
     translations = relationship("InputItemTranslation", back_populates="input_item", cascade="all, delete-orphan")
+    default_unit = relationship("MeasurementUnit")
 
     # Constraints
     __table_args__ = (

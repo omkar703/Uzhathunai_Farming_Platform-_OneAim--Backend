@@ -17,7 +17,8 @@ from app.schemas.auth import (
     ChangePassword,
     TokenResponse,
     AuthResponse,
-    MessageResponse
+    MessageResponse,
+    SwitchOrganizationRequest
 )
 from app.schemas.response import BaseResponse
 from app.schemas.user import UserResponse
@@ -281,7 +282,7 @@ def change_password(
     description="Switch to a different organization and get new access token with updated context"
 )
 def switch_organization(
-    organization_id: str,
+    switch_data: SwitchOrganizationRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -295,14 +296,8 @@ def switch_organization(
     from app.core.security import create_access_token_with_context
     from app.core.exceptions import PermissionError
     
-    # Convert string to UUID
-    try:
-        org_uuid = UUID(organization_id)
-    except ValueError:
-        raise PermissionError(
-            message="Invalid organization ID format",
-            error_code="INVALID_ORGANIZATION_ID"
-        )
+    org_uuid = switch_data.organization_id
+    organization_id = str(org_uuid)
     
     # Verify user has active membership in the requested organization
     membership = db.query(OrgMember).filter(

@@ -12,6 +12,9 @@ from app.core.security import verify_token
 from app.core.exceptions import unauthorized_exception, PermissionError, AuthenticationError
 from app.models.user import User
 from app.services.auth_service import AuthService
+from app.models.organization import OrgMember, Organization, MemberStatus, OrgMemberRole
+from app.models.enums import OrganizationStatus
+from app.models.rbac import Role
 
 # HTTP Bearer token scheme
 security = HTTPBearer()
@@ -36,7 +39,8 @@ def get_current_user(
     """
     # Extract token from credentials
     token = credentials.credentials
-    
+    print(f"DEBUG: get_current_user entering with token ending ...{token[- 10:] if token else 'None'}", flush=True)
+
     # Verify token
     payload = verify_token(token, token_type="access")
     if not payload:
@@ -54,7 +58,9 @@ def get_current_user(
         )
     
     # Query user from database
+    print(f"DEBUG: get_current_user querying DB for {user_id}", flush=True)
     user = db.query(User).filter(User.id == user_id).first()
+    print(f"DEBUG: get_current_user found user? {user is not None}", flush=True)
     if not user:
         raise unauthorized_exception(
             message="User not found",
@@ -96,15 +102,11 @@ def get_current_active_user(
             error_code="INACTIVE_USER"
         )
 
-    # Function to check organization status
-    # We import here to avoid circular imports
-    from app.services.auth_service import AuthService
-    
+    print("DEBUG: get_current_active_user START", flush=True)
+
     # Real implementation of Organization Approval Check
     # Super admins bypass the organization approval check
-    from app.models.rbac import Role
-    from app.models.organization import OrgMemberRole
-    
+    print("DEBUG: Checking super admin status...", flush=True)
     is_super_admin = (
         db.query(OrgMemberRole)
         .join(Role)
@@ -114,14 +116,11 @@ def get_current_active_user(
     )
     
     if is_super_admin:
+        print("DEBUG: User is super admin", flush=True)
         return current_user
         
-    # Lazy load or query memberships
-    # Since we injected DB session, we can query.
-    from app.models.organization import OrgMember, Organization, MemberStatus
-    from app.models.enums import OrganizationStatus
-    
     # Check if user has ANY active membership in an ACTIVE or IN_PROGRESS organization
+    print("DEBUG: Checking org membership...", flush=True)
     stmt = (
         db.query(OrgMember)
         .join(Organization)
@@ -130,8 +129,10 @@ def get_current_active_user(
         .filter(Organization.status.in_([OrganizationStatus.ACTIVE, OrganizationStatus.IN_PROGRESS]))
     )
     approved_membership = stmt.first()
+    print("DEBUG: Org membership checked", flush=True)
     
     # Let's see if they are in a truly unapproved Org (NOT_STARTED)
+    print("DEBUG: Checking unapproved membership...", flush=True)
     stmt_unapproved = (
         db.query(OrgMember)
         .join(Organization)
@@ -140,6 +141,7 @@ def get_current_active_user(
         .filter(Organization.status == OrganizationStatus.NOT_STARTED)
     )
     unapproved_membership = stmt_unapproved.first()
+    print("DEBUG: Unapproved membership checked", flush=True)
     
     if unapproved_membership and not approved_membership:
         # User is part of an unapproved org and NOT part of any approved org.
@@ -149,6 +151,20 @@ def get_current_active_user(
             error_code="ORG_NOT_APPROVED"
         )
         
+    if not approved_membership:
+        print("DEBUG: Checking if freelancer...", flush=True)
+        # Check if they are a freelancer (role FREELANCER, org_id is None)
+        auth_service = AuthService(db)
+        if auth_service.is_freelancer(current_user.id):
+             print("DEBUG: User is freelancer, returning", flush=True)
+             return current_user
+             
+        raise AuthenticationError(
+            message="User is not a member of any active organization",
+            error_code="NO_ACTIVE_ORGANIZATION"
+        )
+        
+    print("DEBUG: get_current_active_user DONE, returning", flush=True)
     return current_user
 
 
@@ -259,9 +275,10 @@ def get_current_super_admin(
     Raises:
         PermissionError: If user is not a Super Admin
     """
-    from sqlalchemy import select
-    from app.models.rbac import Role
-    from app.models.organization import OrgMemberRole
+    # Imports initialized at module level to prevent deadlock
+    # from sqlalchemy import select
+    # from app.models.rbac import Role
+    # from app.models.organization import OrgMemberRole
     
     # Check if ANY OrgMemberRole for this user maps to a 'SUPER_ADMIN' role.
     has_super_admin_role = (

@@ -135,6 +135,8 @@ class ScheduleTemplateTaskResponse(ScheduleTemplateTaskBase):
 # Template schemas
 class ScheduleTemplateBase(BaseModel):
     """Base schema for schedule template."""
+    name: Optional[str] = Field(None, description="Name (maps to default translation)")
+    description: Optional[str] = Field(None, description="Description (maps to default translation)")
     code: str = Field(..., min_length=1, max_length=50)
     crop_type_id: Optional[UUID] = None
     crop_variety_id: Optional[UUID] = None
@@ -158,6 +160,8 @@ class ScheduleTemplateCreate(ScheduleTemplateBase):
 
 class ScheduleTemplateUpdate(BaseModel):
     """Schema for updating schedule template."""
+    name: Optional[str] = Field(None, description="Name (maps to default translation)")
+    description: Optional[str] = Field(None, description="Description (maps to default translation)")
     code: Optional[str] = Field(None, min_length=1, max_length=50)
     crop_type_id: Optional[UUID] = None
     crop_variety_id: Optional[UUID] = None

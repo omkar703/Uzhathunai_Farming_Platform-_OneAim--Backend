@@ -227,12 +227,51 @@ class FSPServiceService:
         
         return services
     
-    def create_service_listing(
+    def get_service_listing(
         self,
-        org_id: UUID,
-        user_id: UUID,
-        data: FSPServiceListingCreate
+        service_id: UUID,
+        user_id: UUID
     ) -> FSPServiceListing:
+        """
+        Get specific service listing.
+        
+        Args:
+            service_id: Service listing ID
+            user_id: User ID (for access control)
+        
+        Returns:
+            Service listing
+        
+        Raises:
+            NotFoundError: If service listing not found
+            PermissionError: If user doesn't have permission
+        """
+        self.logger.info(
+            "Fetching service listing",
+            extra={
+                "service_id": str(service_id),
+                "user_id": str(user_id)
+            }
+        )
+        
+        # Get service listing
+        service_listing = self.db.query(FSPServiceListing).filter(
+            FSPServiceListing.id == service_id
+        ).first()
+        
+        if not service_listing:
+            raise NotFoundError(
+                message="Service listing not found",
+                error_code="SERVICE_LISTING_NOT_FOUND"
+            )
+        
+        # Check if user is a member of the organization
+        self._check_membership(service_listing.fsp_organization_id, user_id)
+        
+        # Eagerly load the service relationship
+        _ = service_listing.service
+        
+        return service_listing
         """
         Create new service listing for FSP organization.
         Triggers approval process by setting org status to IN_PROGRESS.

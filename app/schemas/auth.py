@@ -58,6 +58,11 @@ class ChangePassword(BaseModel):
         return v
 
 
+class SwitchOrganizationRequest(BaseModel):
+    """Schema for switching organization."""
+    organization_id: UUID = Field(..., description="ID of the organization to switch to")
+
+
 class TokenResponse(BaseModel):
     """Schema for token response."""
     access_token: str

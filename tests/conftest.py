@@ -15,7 +15,7 @@ from app.core.security import get_password_hash
 import os
 
 # Test database URL (use environment variable or default to localhost)
-TEST_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/uzhathunai_db_v2")
+TEST_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/farm_db")
 
 # Create test engine
 engine = create_engine(TEST_DATABASE_URL)

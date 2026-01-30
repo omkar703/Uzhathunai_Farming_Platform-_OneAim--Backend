@@ -8,7 +8,7 @@ Ensures audits follow the proper lifecycle: DRAFT → IN_PROGRESS → SUBMITTED 
 from typing import Dict, List, Optional
 from uuid import UUID
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 
 from app.core.logging import get_logger
 from app.core.exceptions import ValidationError, PermissionError
@@ -28,9 +28,9 @@ class WorkflowService:
 
     # Define valid status transitions
     VALID_TRANSITIONS = {
-        AuditStatus.PENDING: [AuditStatus.IN_PROGRESS, AuditStatus.COMPLETED],
+        AuditStatus.PENDING: [AuditStatus.IN_PROGRESS, AuditStatus.SUBMITTED, AuditStatus.COMPLETED],
         AuditStatus.DRAFT: [AuditStatus.PENDING, AuditStatus.IN_PROGRESS, AuditStatus.COMPLETED],
-        AuditStatus.IN_PROGRESS: [AuditStatus.DRAFT, AuditStatus.COMPLETED, AuditStatus.SUBMITTED],
+        AuditStatus.IN_PROGRESS: [AuditStatus.DRAFT, AuditStatus.COMPLETED, AuditStatus.SUBMITTED, AuditStatus.SUBMITTED_FOR_REVIEW],
         AuditStatus.COMPLETED: [AuditStatus.IN_PROGRESS, AuditStatus.SUBMITTED_TO_FARMER, AuditStatus.SUBMITTED, AuditStatus.SUBMITTED_FOR_REVIEW],
         AuditStatus.SUBMITTED: [AuditStatus.IN_PROGRESS, AuditStatus.REVIEWED, AuditStatus.SUBMITTED_FOR_REVIEW, AuditStatus.COMPLETED],
         AuditStatus.SUBMITTED_FOR_REVIEW: [AuditStatus.IN_PROGRESS, AuditStatus.IN_ANALYSIS, AuditStatus.REVIEWED, AuditStatus.COMPLETED],
@@ -78,8 +78,8 @@ class WorkflowService:
             }
         )
 
-        # Get audit
-        audit = self.db.query(Audit).filter(Audit.id == audit_id).first()
+        # Get audit with explicit lock to prevent race conditions
+        audit = self.db.query(Audit).with_for_update().filter(Audit.id == audit_id).first()
         if not audit:
             raise ValidationError(
                 message=f"Audit {audit_id} not found",
@@ -88,9 +88,22 @@ class WorkflowService:
             )
 
         current_status = audit.status
+        print(f"DEBUG: Current status: {current_status}", flush=True)
 
         # Validate transition is allowed
-        if to_status not in self.VALID_TRANSITIONS.get(current_status, []):
+        allowed_transitions = self.VALID_TRANSITIONS.get(current_status, [])
+        print(f"DEBUG: Allowed transitions: {allowed_transitions}", flush=True)
+        
+        if to_status not in allowed_transitions:
+            logger.error(
+                f"DEBUGGING_ERROR: Invalid transition",
+                extra={
+                    "current": current_status.value,
+                    "target": to_status.value,
+                    "allowed": [s.value for s in allowed_transitions]
+                }
+            )
+            print(f"DEBUG: Transition denied!", flush=True)
             raise ValidationError(
                 message=f"Invalid status transition from {current_status.value} to {to_status.value}",
                 error_code="INVALID_STATUS_TRANSITION",
@@ -102,8 +115,14 @@ class WorkflowService:
             )
 
         # Validate requirements for SUBMITTED patterns and COMPLETED
+        print(f"DEBUG: Checking validation requirements for {to_status}", flush=True)
         if to_status in [AuditStatus.SUBMITTED, AuditStatus.SUBMITTED_FOR_REVIEW, AuditStatus.COMPLETED, AuditStatus.SUBMITTED_TO_FARMER]:
+            print("DEBUG: calling _validate_submission_requirements", flush=True)
             self._validate_submission_requirements(audit)
+        else:
+             print("DEBUG: skipping _validate_submission_requirements", flush=True)
+        
+        # Update status
 
         # Update status
         audit.status = to_status
@@ -129,6 +148,8 @@ class WorkflowService:
         1. All required parameters have responses
         2. Photo requirements are met for all parameters
         
+        Optimized to use bulk fetching to avoid N+1 queries.
+        
         Args:
             audit: Audit instance
             
@@ -139,22 +160,38 @@ class WorkflowService:
             "Validating submission requirements",
             extra={"audit_id": str(audit.id)}
         )
+        print("DEBUG: Inside _validate_submission_requirements", flush=True)
 
         # Get all parameter instances
         instances = self.db.query(AuditParameterInstance).filter(
             AuditParameterInstance.audit_id == audit.id
         ).all()
 
+        # Bulk fetch all responses
+        responses = self.db.query(AuditResponse).filter(
+            AuditResponse.audit_id == audit.id
+        ).all()
+        response_map = {r.audit_parameter_instance_id: r for r in responses}
+
+        # Bulk fetch photo counts
+        photo_counts = self.db.query(
+            AuditResponsePhoto.audit_response_id,
+            func.count(AuditResponsePhoto.id)
+        ).filter(
+            AuditResponsePhoto.audit_id == audit.id,
+            AuditResponsePhoto.audit_response_id.isnot(None)
+        ).group_by(AuditResponsePhoto.audit_response_id).all()
+        
+        photo_count_map = {r[0]: r[1] for r in photo_counts}
+
         missing_required = []
         photo_violations = []
 
         for instance in instances:
             # Check required parameters have responses
-            if instance.is_required:
-                response = self.db.query(AuditResponse).filter(
-                    AuditResponse.audit_parameter_instance_id == instance.id
-                ).first()
+            response = response_map.get(instance.id)
 
+            if instance.is_required:
                 if not response or not self._has_valid_response(response):
                     # Get parameter name from snapshot
                     param_name = self._get_parameter_name(instance)
@@ -162,12 +199,9 @@ class WorkflowService:
                     continue
 
             # Check photo requirements
-            response = self.db.query(AuditResponse).filter(
-                AuditResponse.audit_parameter_instance_id == instance.id
-            ).first()
-
             if response:
-                photo_validation = self._validate_photo_requirements(instance, response)
+                photo_count = photo_count_map.get(response.id, 0)
+                photo_validation = self._validate_photo_requirements(instance, photo_count)
                 if not photo_validation["valid"]:
                     param_name = self._get_parameter_name(instance)
                     photo_violations.append({
@@ -182,6 +216,15 @@ class WorkflowService:
                 error_details["missing_required_responses"] = missing_required
             if photo_violations:
                 error_details["photo_requirement_violations"] = photo_violations
+            
+            logger.error(
+                f"DEBUGGING_ERROR: Validation failed",
+                extra={
+                    "missing": missing_required,
+                    "photo_violations": photo_violations,
+                    "audit_id": str(audit.id)
+                }
+            )
 
             raise ValidationError(
                 message="Audit does not meet submission requirements",
@@ -214,14 +257,14 @@ class WorkflowService:
     def _validate_photo_requirements(
         self,
         instance: AuditParameterInstance,
-        response: AuditResponse
+        photo_count: int
     ) -> Dict[str, any]:
         """
         Validate photo requirements for a parameter.
         
         Args:
             instance: AuditParameterInstance
-            response: AuditResponse
+            photo_count: Number of photos uploaded for this response
             
         Returns:
             Dictionary with 'valid' boolean and optional 'error' message
@@ -231,14 +274,9 @@ class WorkflowService:
         if not snapshot:
             return {"valid": True}
 
-        metadata = snapshot.get("parameter_metadata", {})
+        metadata = snapshot.get("parameter_metadata") or {}
         min_photos = metadata.get("min_photos", 0)
         max_photos = metadata.get("max_photos", 999)
-
-        # Count photos for this response
-        photo_count = self.db.query(AuditResponsePhoto).filter(
-            AuditResponsePhoto.audit_response_id == response.id
-        ).count()
 
         # Validate min photos
         if photo_count < min_photos:

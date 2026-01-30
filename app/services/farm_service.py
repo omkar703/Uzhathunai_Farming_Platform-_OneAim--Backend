@@ -13,6 +13,7 @@ from app.core.exceptions import NotFoundError, ValidationError, PermissionError
 from app.models.farm import (
     Farm, FarmSupervisor, FarmWaterSource, FarmSoilType, FarmIrrigationMode
 )
+from app.models.reference_data import ReferenceData
 from app.models.work_order import WorkOrder, WorkOrderScope
 from app.models.enums import WorkOrderStatus, WorkOrderScopeType
 from app.schemas.farm import FarmCreate, FarmUpdate, FarmResponse, FarmSupervisorResponse
@@ -213,9 +214,9 @@ class FarmService:
             .options(
                 joinedload(Farm.manager),
                 joinedload(Farm.supervisors),
-                joinedload(Farm.water_sources),
-                joinedload(Farm.soil_types),
-                joinedload(Farm.irrigation_modes),
+                joinedload(Farm.water_sources).joinedload(FarmWaterSource.water_source).joinedload(ReferenceData.translations),
+                joinedload(Farm.soil_types).joinedload(FarmSoilType.soil_type).joinedload(ReferenceData.translations),
+                joinedload(Farm.irrigation_modes).joinedload(FarmIrrigationMode.irrigation_mode).joinedload(ReferenceData.translations),
                 joinedload(Farm.area_unit)
             )
             .filter(

@@ -10,7 +10,7 @@ from sqlalchemy import and_, or_
 from app.core.logging import get_logger
 from app.core.exceptions import NotFoundError, PermissionError, ValidationError
 from app.models.parameter import Parameter, ParameterTranslation, ParameterOptionSetMap, ParameterType
-from app.models.option_set import OptionSet
+from app.models.option_set import OptionSet, Option, OptionTranslation
 from app.models.user import User
 from app.schemas.parameter import (
     ParameterCreate, ParameterUpdate, ParameterCopy, ParameterResponse, ParameterDetailResponse
@@ -216,40 +216,90 @@ class ParameterService:
         
         # Validate option sets for SELECT types
         if data.parameter_type in [ParameterType.SINGLE_SELECT, ParameterType.MULTI_SELECT]:
-            if not data.option_set_ids or len(data.option_set_ids) == 0:
+            inline_options = data.options or data.option_set
+            
+            if not data.option_set_ids and not inline_options:
                 raise ValidationError(
-                    message=f"{data.parameter_type.value} parameters must have at least one option set",
+                    message=f"{data.parameter_type.value} parameters must have at least one option set or inline options",
                     error_code="MISSING_OPTION_SETS",
                     details={"parameter_type": data.parameter_type.value}
                 )
             
-            # Validate option sets exist and are accessible
-            for option_set_id in data.option_set_ids:
-                option_set = self.db.query(OptionSet).filter(
-                    OptionSet.id == option_set_id
+            # Handle inline options
+            if inline_options and not data.option_set_ids:
+                # Create a new option set for these inline options
+                os_code = f"OS_{data.code}"[:50]
+                
+                # Check if it exists
+                existing_os = self.db.query(OptionSet).filter(
+                    OptionSet.code == os_code,
+                    OptionSet.owner_org_id == org_id
                 ).first()
                 
-                if not option_set:
-                    raise ValidationError(
-                        message=f"Option set {option_set_id} not found",
-                        error_code="OPTION_SET_NOT_FOUND",
-                        details={"option_set_id": str(option_set_id)}
-                    )
+                if existing_os:
+                    # Reuse existing one if it matches code? 
+                    # For safety, let's just use it or append uuid
+                    import uuid
+                    os_code = f"OS_{data.code}_{str(uuid.uuid4())[:8]}"[:50]
                 
-                # Validate access to option set
-                # If org_id is None, we can technically use any option set, but let's be careful.
-                # Assuming system admins can use system option sets or any method.
-                if org_id:
-                    if not option_set.is_system_defined and option_set.owner_org_id != org_id:
-                        raise PermissionError(
-                            message="Cannot use option set owned by another organization",
-                            error_code="INSUFFICIENT_PERMISSIONS",
-                            details={
-                                "option_set_id": str(option_set_id),
-                                "owner_org_id": str(option_set.owner_org_id),
-                                "requesting_org_id": str(org_id)
-                            }
+                new_os = OptionSet(
+                    code=os_code,
+                    is_system_defined=False,
+                    owner_org_id=org_id,
+                    is_active=True,
+                    created_by=user_id,
+                    updated_by=user_id
+                )
+                self.db.add(new_os)
+                self.db.flush()
+                
+                for i, opt in enumerate(inline_options):
+                    new_opt = Option(
+                        option_set_id=new_os.id,
+                        code=opt.value,
+                        sort_order=i,
+                        is_active=True
+                    )
+                    self.db.add(new_opt)
+                    self.db.flush()
+                    
+                    # Add translation (using 'en' as default)
+                    new_trans = OptionTranslation(
+                        option_id=new_opt.id,
+                        language_code="en",
+                        display_text=opt.label
+                    )
+                    self.db.add(new_trans)
+                
+                data.option_set_ids = [new_os.id]
+                logger.info(f"Created inline OptionSet {os_code} for parameter {data.code}")
+
+            # Validate option sets exist and are accessible
+            if data.option_set_ids:
+                for option_set_id in data.option_set_ids:
+                    option_set = self.db.query(OptionSet).filter(
+                        OptionSet.id == option_set_id
+                    ).first()
+                    
+                    if not option_set:
+                        raise ValidationError(
+                            message=f"Option set {option_set_id} not found",
+                            error_code="OPTION_SET_NOT_FOUND",
+                            details={"option_set_id": str(option_set_id)}
                         )
+                    
+                    # Validate access to option set
+                    if org_id:
+                        if not option_set.is_system_defined and option_set.owner_org_id != org_id:
+                            raise PermissionError(
+                                message="Cannot use option set owned by another organization",
+                                error_code="INSUFFICIENT_PERMISSIONS",
+                                details={
+                                    "option_set_id": str(option_set_id),
+                                    "owner_org_id": str(option_set.owner_org_id),
+                                    "requesting_org_id": str(org_id)
+                                }
+                            )
         
         # Create parameter
         is_system = org_id is None
@@ -377,6 +427,50 @@ class ParameterService:
                     )
                     self.db.add(translation)
         
+        # Handle inline options update
+        # If inline options provided, create a new option set and update option_set_ids
+        inline_options = data.options or data.option_set
+        if inline_options:
+            # Create a new option set for these inline options
+            # Similar logic to create_org_parameter
+            import uuid
+            os_code = f"OS_{parameter.code}_{str(uuid.uuid4())[:8]}"[:50]
+            
+            new_os = OptionSet(
+                code=os_code,
+                is_system_defined=False,
+                owner_org_id=org_id,
+                is_active=True,
+                created_by=user_id,
+                updated_by=user_id
+            )
+            self.db.add(new_os)
+            self.db.flush()
+            
+            for i, opt in enumerate(inline_options):
+                new_opt = Option(
+                    option_set_id=new_os.id,
+                    code=opt.value,
+                    sort_order=i,
+                    is_active=True
+                )
+                self.db.add(new_opt)
+                self.db.flush()
+                
+                # Add translation (using 'en' as default)
+                new_trans = OptionTranslation(
+                    option_id=new_opt.id,
+                    language_code="en",
+                    display_text=opt.label
+                )
+                self.db.add(new_trans)
+            
+            # Update option_set_ids to point to this new OS
+            # This overwrites any existing option_set_ids if provided in the same request
+            # or replaces existing ones if not provided.
+            data.option_set_ids = [new_os.id]
+            logger.info(f"Created new inline OptionSet {os_code} for updated parameter {parameter.code}")
+
         # Update option set mappings
         if data.option_set_ids is not None:
             # Remove existing mappings
@@ -722,7 +816,7 @@ class ParameterService:
         language: str
     ) -> ParameterDetailResponse:
         """Convert parameter model to response schema."""
-        from app.schemas.parameter import ParameterTranslationResponse
+        from app.schemas.parameter import ParameterTranslationResponse, InlineOption
         
         # Convert translations
         translations_list = [
@@ -760,6 +854,59 @@ class ParameterService:
         # Fallback to any translation if English not found
         if not name and parameter.translations:
             name = parameter.translations[0].name
+            
+        # Populate detailed option_set with translations
+        option_set_details = []
+        if parameter.option_set_mappings:
+            # For each mapping, get the option set and its options
+            for mapping in parameter.option_set_mappings:
+                # We need to fetch the option set and its options if not already loaded
+                # The relationship mapping.option_set might not be eagerly loaded depending on query
+                # better to rely on what satisfied the query options or fetch if needed
+                
+                # Assuming simple access for now, but to be robust we should ensure eager loading in query
+                # In get_parameters/get_parameter, we loaded option_set_mappings but not the option_set relations deeper
+                pass
+                
+                # REVISIT: Fetching options here might be N+1 if not careful.
+                # However, for detail view it's fine. For list view, we might want to optimize.
+                # Let's perform a direct query to get options for these sets.
+                
+                options = self.db.query(Option).filter(
+                     and_(
+                         Option.option_set_id == mapping.option_set_id,
+                         Option.is_active == True
+                     )
+                ).order_by(Option.sort_order).all()
+                
+                for opt in options:
+                    # Find translation for option
+                    # Note: This is a bit inefficient doing query in loop.
+                    # Optimally we join OptionTranslation.
+                    opt_trans = self.db.query(OptionTranslation).filter(
+                        and_(
+                            OptionTranslation.option_id == opt.id,
+                            OptionTranslation.language_code == language
+                        )
+                    ).first()
+                    
+                    if not opt_trans:
+                        # Fallback to en
+                        opt_trans = self.db.query(OptionTranslation).filter(
+                            and_(
+                                OptionTranslation.option_id == opt.id,
+                                OptionTranslation.language_code == "en"
+                            )
+                        ).first()
+                        
+                    label = opt_trans.display_text if opt_trans else opt.code
+                    
+                    option_set_details.append(
+                        InlineOption(
+                            label=label,
+                            value=opt.code
+                        )
+                    )
 
         return ParameterDetailResponse(
             id=parameter.id,
@@ -775,5 +922,6 @@ class ParameterService:
             updated_by=parameter.updated_by,
             name=name,
             translations=translations_list,
-            option_set_ids=option_set_ids
+            option_set_ids=option_set_ids,
+            option_set=option_set_details
         )

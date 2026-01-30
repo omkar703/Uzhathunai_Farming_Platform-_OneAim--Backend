@@ -79,20 +79,48 @@ class RecommendationService:
                 error_code="INVALID_AUDIT_STATUS"
             )
         
-        # Validate schedule exists
-        schedule = self.db.query(Schedule).filter(Schedule.id == schedule_id).first()
-        if not schedule:
-            raise NotFoundError(
-                message=f"Schedule {schedule_id} not found",
-                error_code="SCHEDULE_NOT_FOUND"
+        if audit.status not in valid_statuses:
+            raise ValidationError(
+                message=f"Recommendations can only be created for audits in SUBMITTED, REVIEWED, or FINALIZED status. Current status: {audit.status.value}",
+                error_code="INVALID_AUDIT_STATUS"
             )
         
-        # Validate schedule belongs to the audit's crop
-        if schedule.crop_id != audit.crop_id:
-            raise ValidationError(
-                message="Schedule must belong to the audit's crop",
-                error_code="SCHEDULE_CROP_MISMATCH"
-            )
+        # If schedule_id is missing, try to find active schedule for the crop
+        if not schedule_id:
+            schedule = self.db.query(Schedule).filter(
+                Schedule.crop_id == audit.crop_id,
+                Schedule.is_active == True
+            ).first()
+            
+            if not schedule:
+                # Try finding any schedule for the crop
+                schedule = self.db.query(Schedule).filter(
+                    Schedule.crop_id == audit.crop_id
+                ).order_by(Schedule.created_at.desc()).first()
+                
+            if not schedule:
+                raise NotFoundError(
+                    message=f"No associated schedule found for audit's crop {audit.crop_id}",
+                    error_code="SCHEDULE_NOT_FOUND"
+                )
+            schedule_id = schedule.id
+            logger.info(f"Auto-detected schedule {schedule_id} for audit {audit_id}")
+
+        else:
+            # Validate provided schedule exists
+            schedule = self.db.query(Schedule).filter(Schedule.id == schedule_id).first()
+            if not schedule:
+                raise NotFoundError(
+                    message=f"Schedule {schedule_id} not found",
+                    error_code="SCHEDULE_NOT_FOUND"
+                )
+            
+            # Validate schedule belongs to the audit's crop
+            if schedule.crop_id != audit.crop_id:
+                raise ValidationError(
+                    message="Schedule must belong to the audit's crop",
+                    error_code="SCHEDULE_CROP_MISMATCH"
+                )
         
         # Create recommendation using schedule_change_log_service
         # is_applied=False means it's a proposed change pending approval

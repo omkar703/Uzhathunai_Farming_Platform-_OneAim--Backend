@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, validator
 
 from app.models.enums import InputItemType
+from app.schemas.measurement_unit import MeasurementUnitResponse
 
 
 class ItemMetadata(BaseModel):
@@ -182,6 +183,7 @@ class InputItemResponse(BaseModel):
     is_active: bool
     type: Optional[InputItemType] = None
     default_unit_id: Optional[UUID] = None
+    default_unit: Optional[MeasurementUnitResponse] = None
     item_metadata: Optional[Dict[str, Any]] = Field(None, description="Item metadata (brand, composition, NPK ratio, etc.)")
     created_at: datetime
     updated_at: datetime

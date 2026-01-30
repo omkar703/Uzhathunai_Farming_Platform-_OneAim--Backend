@@ -154,6 +154,33 @@ def create_service_listing(
     }
 
 
+@router.get(
+    "/organizations/{org_id}/services/{service_id}",
+    response_model=BaseResponse[FSPServiceListingResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get service listing details",
+    description="Get details of a specific service listing"
+)
+def get_service_listing_details(
+    org_id: UUID,
+    service_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get details of a specific service listing.
+    
+    Members of the organization can view details.
+    """
+    service = FSPServiceService(db)
+    listing = service.get_service_listing(service_id, current_user.id)
+    return {
+        "success": True,
+        "message": "Service listing retrieved successfully",
+        "data": listing
+    }
+
+
 @router.put(
     "/organizations/{org_id}/services/{service_id}",
     response_model=BaseResponse[FSPServiceListingResponse],

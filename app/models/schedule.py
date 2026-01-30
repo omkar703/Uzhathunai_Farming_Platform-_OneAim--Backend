@@ -58,6 +58,37 @@ class Schedule(Base):
     
     def __repr__(self):
         return f"<Schedule(id={self.id}, name={self.name}, crop_id={self.crop_id})>"
+    
+    @property
+    def start_date(self):
+        """Extract start_date from template_parameters or fallback to created_at."""
+        if self.template_parameters and isinstance(self.template_parameters, dict):
+            sd = self.template_parameters.get('start_date')
+            if sd:
+                try:
+                    from datetime import date
+                    return date.fromisoformat(sd)
+                except:
+                    pass
+        return self.created_at.date() if self.created_at else None
+
+    @property
+    def total_tasks(self):
+        """Total count of tasks in this schedule."""
+        return len(self.tasks) if self.tasks else 0
+
+    @property
+    def completed_tasks(self):
+        """Count of completed tasks."""
+        if not self.tasks:
+            return 0
+        from app.models.enums import TaskStatus
+        return len([t for t in self.tasks if t.status == TaskStatus.COMPLETED])
+
+    @property
+    def items(self):
+        """Alias for tasks to support frontend naming convention."""
+        return self.tasks
 
 
 class ScheduleTask(Base):
@@ -98,6 +129,42 @@ class ScheduleTask(Base):
     
     def __repr__(self):
         return f"<ScheduleTask(id={self.id}, schedule_id={self.schedule_id}, due_date={self.due_date})>"
+
+    @property
+    def task_name(self):
+        """Get the name of the underlying task."""
+        return self.task.name if self.task else "Unknown Task"
+    
+    @property
+    def input_item_name(self):
+        """Get the input item name from task_details if present."""
+        if self.task_details and isinstance(self.task_details, dict):
+            # Try to get from calculated input_items
+            items = self.task_details.get('input_items', [])
+            if items and isinstance(items, list) and len(items) > 0:
+                name = items[0].get('input_item_name')
+                if name: return name
+            
+            # Try to get from concentration
+            conc = self.task_details.get('concentration', {})
+            if conc and isinstance(conc, dict):
+                ings = conc.get('ingredients', [])
+                if ings and len(ings) > 0:
+                    name = ings[0].get('input_item_name')
+                    if name: return name
+        return None
+
+    @property
+    def application_method_name(self):
+        """Get the application method name from task_details if present."""
+        if self.task_details and isinstance(self.task_details, dict):
+            return self.task_details.get('application_method_name')
+        return None
+
+    @property
+    def scheduled_date(self):
+        """Alias for due_date to match frontend naming."""
+        return self.due_date
 
 
 class TaskActual(Base):

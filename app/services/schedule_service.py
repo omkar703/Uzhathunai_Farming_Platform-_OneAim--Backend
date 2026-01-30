@@ -301,14 +301,37 @@ class ScheduleService:
             else:
                 schedule.status = 'CANCELLED'
                 
-            # 2. Farm and Crop Names
+            # 2. Farm, Plot, and Crop Names
             try:
                 if schedule.crop:
                     schedule.crop_name = schedule.crop.name
-                    if schedule.crop.plot and schedule.crop.plot.farm:
-                        schedule.farm_name = schedule.crop.plot.farm.name
+                    if schedule.crop.plot:
+                        schedule.field_name = schedule.crop.plot.name
+                        if schedule.crop.plot.farm:
+                            schedule.farm_name = schedule.crop.plot.farm.name
             except Exception as e:
                 logger.warning(f"Error populating extra fields for schedule {schedule.id}: {e}")
+            
+            # 3. FSP Information
+            try:
+                if schedule.creator:
+                    # A schedule is FSP-created if the creator is part of an FSP organization
+                    # We check if the creator has a member record in an FSP org
+                    from app.models.organization import Organization, OrgMember
+                    from app.models.enums import OrganizationType
+                    
+                    creator_fsp_org = self.db.query(Organization).join(OrgMember).filter(
+                        OrgMember.user_id == schedule.creator.id,
+                        Organization.organization_type == OrganizationType.FSP
+                    ).first()
+                    
+                    if creator_fsp_org:
+                        schedule.fsp_name = creator_fsp_org.name
+                        schedule.is_fsp_created = True
+                    else:
+                        schedule.is_fsp_created = False
+            except Exception as e:
+                logger.warning(f"Error populating FSP info for schedule {schedule.id}: {e}")
 
         logger.info(
             "Schedules retrieved",
@@ -321,6 +344,50 @@ class ScheduleService:
         )
         
         return schedules, total
+
+    def get_schedule_with_details(self, user: User, schedule_id: UUID) -> Schedule:
+        """Get single schedule with all details populated."""
+        schedule = self.db.query(Schedule).filter(
+            Schedule.id == schedule_id,
+            Schedule.is_active == True
+        ).first()
+
+        if not schedule:
+            raise NotFoundError(
+                message=f"Schedule {schedule_id} not found",
+                error_code="SCHEDULE_NOT_FOUND"
+            )
+
+        # Populate computed fields (reuse logic from get_schedules or model properties)
+        # Note: Model properties (total_tasks, completed_tasks, start_date) are automatic.
+        schedule.status = 'ACTIVE' if schedule.is_active else 'CANCELLED'
+        
+        try:
+            if schedule.crop:
+                schedule.crop_name = schedule.crop.name
+                if schedule.crop.plot:
+                    schedule.field_name = schedule.crop.plot.name
+                    if schedule.crop.plot.farm:
+                        schedule.farm_name = schedule.crop.plot.farm.name
+        except Exception as e:
+            logger.warning(f"Error populating extra fields for schedule {schedule.id}: {e}")
+
+        try:
+            if schedule.creator:
+                from app.models.organization import Organization
+                from app.models.enums import OrganizationType
+                
+                creator_org = self.db.query(Organization).filter(
+                    Organization.id == schedule.creator.current_organization_id
+                ).first()
+                
+                if creator_org:
+                    schedule.fsp_name = creator_org.name
+                    schedule.is_fsp_created = creator_org.organization_type == OrganizationType.FSP
+        except Exception as e:
+            logger.warning(f"Error populating FSP info for schedule {schedule.id}: {e}")
+
+        return schedule
     
     def _validate_schedule_creation_access(self, user: User, crop_id: UUID) -> None:
         """

@@ -156,7 +156,13 @@ class TemplateSection(Base):
                 return t.name
         
         # Fallback to first available
+        # Fallback to first available
         return self.section.translations[0].name
+
+    @property
+    def name(self) -> str:
+        """Alias for section_name to support Pydantic model"""
+        return self.section_name
 
     def __repr__(self):
         return f"<TemplateSection(id={self.id}, template_id={self.template_id}, section_id={self.section_id})>"
@@ -197,6 +203,11 @@ class TemplateParameter(Base):
         
         # Fallback to first available
         return self.parameter.translations[0].name
+
+    @property
+    def label(self) -> Optional[str]:
+        """Alias for name to support Pydantic model"""
+        return self.name
 
     def __repr__(self):
         return f"<TemplateParameter(id={self.id}, template_section_id={self.template_section_id}, parameter_id={self.parameter_id})>"

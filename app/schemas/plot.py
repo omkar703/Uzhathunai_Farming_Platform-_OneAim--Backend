@@ -3,11 +3,12 @@ Plot schemas for Uzhathunai v2.0.
 
 Schemas for plot CRUD operations with GIS support.
 """
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 from pydantic import BaseModel, Field, validator
+from app.schemas.farm import ReferenceDataNested
 
 
 class GeoJSONPolygon(BaseModel):
@@ -105,6 +106,90 @@ class PlotIrrigationModeAdd(BaseModel):
     irrigation_mode_id: UUID = Field(..., description="Irrigation mode reference ID")
 
 
+class PlotWaterSourceResponse(BaseModel):
+    """Schema for plot water source response."""
+    id: str
+    plot_id: str
+    water_source_id: str
+    created_at: datetime
+    reference_data: ReferenceDataNested
+    
+    @validator('id', 'plot_id', 'water_source_id', pre=True)
+    def convert_uuid_to_str(cls, v):
+        """Convert UUID to string."""
+        if v is not None:
+            return str(v)
+        return v
+    
+    @validator('reference_data', pre=True)
+    def get_reference_data(cls, v, values):
+        """Get reference data from water_source relationship."""
+        if isinstance(v, dict):
+            return v
+        if hasattr(v, '__dict__'):
+            return v # Let Pydantic from_attributes handle it
+        return v
+    
+    class Config:
+        from_attributes = True
+
+
+class PlotSoilTypeResponse(BaseModel):
+    """Schema for plot soil type response."""
+    id: str
+    plot_id: str
+    soil_type_id: str
+    created_at: datetime
+    reference_data: ReferenceDataNested
+    
+    @validator('id', 'plot_id', 'soil_type_id', pre=True)
+    def convert_uuid_to_str(cls, v):
+        """Convert UUID to string."""
+        if v is not None:
+            return str(v)
+        return v
+    
+    @validator('reference_data', pre=True)
+    def get_reference_data(cls, v, values):
+        """Get reference data from soil_type relationship."""
+        if isinstance(v, dict):
+            return v
+        if hasattr(v, '__dict__'):
+            return v # Let Pydantic from_attributes handle it
+        return v
+    
+    class Config:
+        from_attributes = True
+
+
+class PlotIrrigationModeResponse(BaseModel):
+    """Schema for plot irrigation mode response."""
+    id: str
+    plot_id: str
+    irrigation_mode_id: str
+    created_at: datetime
+    reference_data: ReferenceDataNested
+    
+    @validator('id', 'plot_id', 'irrigation_mode_id', pre=True)
+    def convert_uuid_to_str(cls, v):
+        """Convert UUID to string."""
+        if v is not None:
+            return str(v)
+        return v
+    
+    @validator('reference_data', pre=True)
+    def get_reference_data(cls, v, values):
+        """Get reference data from irrigation_mode relationship."""
+        if isinstance(v, dict):
+            return v
+        if hasattr(v, '__dict__'):
+            return v # Let Pydantic from_attributes handle it
+        return v
+    
+    class Config:
+        from_attributes = True
+
+
 class PlotResponse(BaseModel):
     """Schema for plot response."""
     id: str
@@ -115,6 +200,9 @@ class PlotResponse(BaseModel):
     area: Optional[Decimal]
     area_unit_id: Optional[str]
     plot_attributes: Optional[Dict[str, Any]] = Field(None, description="Plot attributes (soil EC, pH, water EC, pH, etc.)")
+    water_sources: List[PlotWaterSourceResponse] = Field(default_factory=list, description="Water sources with reference data")
+    soil_types: List[PlotSoilTypeResponse] = Field(default_factory=list, description="Soil types with reference data")
+    irrigation_modes: List[PlotIrrigationModeResponse] = Field(default_factory=list, description="Irrigation modes with reference data")
     is_active: bool
     created_at: datetime
     updated_at: datetime

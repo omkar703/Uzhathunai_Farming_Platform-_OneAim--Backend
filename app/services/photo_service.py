@@ -166,8 +166,7 @@ class PhotoService:
             file_url=file_url,
             file_key=file_key,
             caption=caption,
-            uploaded_by=user_id,
-            source_type=PhotoSourceType.MANUAL_UPLOAD
+            uploaded_by=user_id
         )
         
         self.db.add(photo)

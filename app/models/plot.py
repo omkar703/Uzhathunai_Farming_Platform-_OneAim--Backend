@@ -70,6 +70,10 @@ class PlotWaterSource(Base):
     plot = relationship("Plot", back_populates="water_sources")
     water_source = relationship("ReferenceData")
 
+    @property
+    def reference_data(self):
+        return self.water_source
+
 
 class PlotSoilType(Base):
     """
@@ -87,6 +91,10 @@ class PlotSoilType(Base):
     plot = relationship("Plot", back_populates="soil_types")
     soil_type = relationship("ReferenceData")
 
+    @property
+    def reference_data(self):
+        return self.soil_type
+
 
 class PlotIrrigationMode(Base):
     """
@@ -103,3 +111,7 @@ class PlotIrrigationMode(Base):
     # Relationships
     plot = relationship("Plot", back_populates="irrigation_modes")
     irrigation_mode = relationship("ReferenceData")
+
+    @property
+    def reference_data(self):
+        return self.irrigation_mode

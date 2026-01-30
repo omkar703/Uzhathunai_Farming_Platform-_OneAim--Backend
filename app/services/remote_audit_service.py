@@ -88,7 +88,6 @@ class RemoteAuditService:
                 file_url=file_url,
                 file_key=file_key,
                 caption="Live snapshot from video call",
-                source_type=PhotoSourceType.LIVE_CAPTURE,
                 uploaded_by=user_id
             )
             

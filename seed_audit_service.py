@@ -16,6 +16,7 @@ from app.models.template import Template, TemplateSection, TemplateParameter, Te
 from app.models.organization import Organization
 from app.models.fsp_service import FSPServiceListing, MasterService
 from app.models.schedule_template import ScheduleTemplate, ScheduleTemplateTask, ScheduleTemplateTranslation
+from app.models.user import User
 from app.models.enums import ServiceStatus
 
 def seed_audit_service():
@@ -24,19 +25,32 @@ def seed_audit_service():
         print("Starting seed process...")
         
         # 1. Constants
-        FSP_ORG_ID = '5504357f-21a4-4877-b78e-37f8fe7dfec5'
-        FSP_OWNER_ID = '74b6458f-e7ee-46f3-8261-eb98eda69bd2' # From inspection
         AUDIT_TEMPLATE_CODE = 'SOIL_AUDIT_V1'
         SCHEDULE_TEMPLATE_CODE = 'SOIL_AUDIT_SCHED'
         SERVICE_NAME = 'Standard Soil Audit'
         
-        # 2. Verify FSP Organization exists
-        org = db.query(Organization).filter(Organization.id == FSP_ORG_ID).first()
-        if not org:
-            print(f"Error: Organization {FSP_ORG_ID} not found!")
-            return
+        # 2. Fetch FSP Organization and Owner
+        org_name = "GreenOps FSP Services"
+        owner_email = "fsp_manager@gmail.com"
 
-        print(f"Found Organization: {org.name}")
+        org = db.query(Organization).filter(Organization.name == org_name).first()
+        if not org:
+            print(f"Error: Organization '{org_name}' not found! Please run seed_farm_fsp_full.py first.")
+            return
+        FSP_ORG_ID = str(org.id)
+
+        user = db.query(User).filter(User.email == owner_email).first()
+        if not user:
+             print(f"Error: User '{owner_email}' not found!")
+             # Fallback to org creator if specific user not found (though unlikely)
+             user = db.query(User).filter(User.id == org.created_by).first()
+             if not user:
+                 print("Error: Could not determine FSP Owner.")
+                 return
+        FSP_OWNER_ID = str(user.id)
+
+        print(f"Found Organization: {org.name} ({FSP_ORG_ID})")
+        print(f"Found Owner: {user.email} ({FSP_OWNER_ID})")
 
         # 3. Create Audit Template (Template model)
         print("\nCreating Audit Template...")

@@ -21,7 +21,7 @@ from app.schemas.input_item import (
 from app.services.input_item_service import InputItemService
 
 from app.core.organization_context import get_organization_id
-from app.models.enums import OrganizationType
+from app.models.enums import OrganizationType, InputItemType
 
 router = APIRouter()
 
@@ -133,6 +133,7 @@ def get_input_items(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(50, ge=1, le=100, description="Items per page"),
     search: Optional[str] = Query(None, description="Search query for name or code"),
+    type: Optional[InputItemType] = Query(None, description="Filter by item type (FERTILIZER, PESTICIDE)"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -145,6 +146,7 @@ def get_input_items(
     - **page**: Page number for pagination (default: 1)
     - **limit**: Number of items per page (default: 50, max: 100)
     - **search**: Search string for item name or code
+    - **type**: Filter by item type (FERTILIZER, PESTICIDE, etc.)
     
     Returns a paginated list of input items.
     """
@@ -153,7 +155,7 @@ def get_input_items(
     # Get organization ID from JWT token with Smart Inference
     org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    data = service.get_items(org_id, category_id, language, include_system, page, limit, search)
+    data = service.get_items(org_id, category_id, language, include_system, page, limit, search, item_type=type)
     return {"success": True, "data": data}
 
 

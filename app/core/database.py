@@ -30,6 +30,7 @@ def get_db():
     """
     db = SessionLocal()
     try:
+        print(f"DEBUG: get_db session created {id(db)}", flush=True)
         yield db
     finally:
         db.close()

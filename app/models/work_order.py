@@ -6,6 +6,7 @@ Models match database schema exactly from 001_uzhathunai_ddl.sql:
 - WorkOrderScope (lines 1117-1135)
 """
 from datetime import datetime, date
+from typing import Optional, List, Any
 from sqlalchemy import Column, String, Text, Date, DateTime, Integer, Numeric, ForeignKey, Enum as SQLEnum, UniqueConstraint, Boolean
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -55,6 +56,9 @@ class WorkOrder(Base):
     total_amount = Column(Numeric(15, 2))
     currency = Column(String(10), default='INR')
     
+    # Service snapshot
+    service_snapshot = Column(JSONB)
+    
     # Audit fields
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -81,16 +85,18 @@ class WorkOrder(Base):
     acceptor = relationship("User", foreign_keys=[accepted_by])
     assigned_member = relationship("User", foreign_keys=[assigned_to_user_id])
     
-    def __repr__(self):
-        return f"<WorkOrder(id={self.id}, number={self.work_order_number}, status={self.status})>"
+    @property
+    def farming_organization_name(self) -> Optional[str]:
+        """Get farming organization name."""
+        return self.farming_organization.name if self.farming_organization else None
 
     @property
-    def service_snapshot(self):
-        """Return service snapshot from work order details."""
-        return {
-            "name": self.title,
-            "description": self.description
-        }
+    def fsp_organization_name(self) -> Optional[str]:
+        """Get FSP organization name."""
+        return self.fsp_organization.name if self.fsp_organization else None
+
+    def __repr__(self):
+        return f"<WorkOrder(id={self.id}, number={self.work_order_number}, status={self.status})>"
 
 
 class WorkOrderScope(Base):

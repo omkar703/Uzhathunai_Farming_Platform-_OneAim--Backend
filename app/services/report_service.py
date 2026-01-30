@@ -349,9 +349,11 @@ class ReportService:
         """
         flagged_photos = []
         
-        # Get all photos for this audit
-        photos = self.db.query(AuditResponsePhoto).filter(
-            AuditResponsePhoto.audit_id == audit.id
+        # Get all photos for this audit by joining with AuditResponse
+        photos = self.db.query(AuditResponsePhoto).join(
+            AuditResponse, AuditResponsePhoto.audit_response_id == AuditResponse.id
+        ).filter(
+            AuditResponse.audit_id == audit.id
         ).all()
 
         
@@ -365,7 +367,6 @@ class ReportService:
             if review_photo:
                 flagged_photos.append({
                     "id": photo.id,
-                    "audit_id": photo.audit_id,
                     "audit_response_id": photo.audit_response_id,
                     "file_url": photo.file_url,
                     "file_key": photo.file_key,

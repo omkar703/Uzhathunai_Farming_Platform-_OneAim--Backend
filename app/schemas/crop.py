@@ -62,6 +62,38 @@ class UpdateLifecycleRequest(BaseModel):
     new_lifecycle: CropLifecycle = Field(..., description="New lifecycle stage")
 
 
+class CropTypeNested(BaseModel):
+    """Nested crop type data for responses."""
+    id: str
+    code: str
+    name: Optional[str]
+    
+    @validator('id', pre=True)
+    def convert_uuid_to_str(cls, v):
+        if v is not None:
+            return str(v)
+        return v
+    
+    class Config:
+        from_attributes = True
+
+
+class CropVarietyNested(BaseModel):
+    """Nested crop variety data for responses."""
+    id: str
+    code: str
+    name: Optional[str]
+    
+    @validator('id', pre=True)
+    def convert_uuid_to_str(cls, v):
+        if v is not None:
+            return str(v)
+        return v
+    
+    class Config:
+        from_attributes = True
+
+
 class CropResponse(BaseModel):
     """Schema for crop response."""
     id: str
@@ -70,6 +102,8 @@ class CropResponse(BaseModel):
     description: Optional[str]
     crop_type_id: Optional[str]
     crop_variety_id: Optional[str]
+    crop_type: Optional[CropTypeNested] = None
+    crop_variety: Optional[CropVarietyNested] = None
     area: Optional[Decimal]
     area_unit_id: Optional[str]
     plant_count: Optional[int]
@@ -85,6 +119,12 @@ class CropResponse(BaseModel):
     updated_at: datetime
     created_by: Optional[str]
     updated_by: Optional[str]
+    
+    # Frontend Aliases
+    variety: Optional[CropVarietyNested] = None
+    sowing_date: Optional[date] = None
+    status: Optional[str] = None
+    expected_harvest_date: Optional[date] = None
     
     @validator('id', 'plot_id', 'crop_type_id', 'crop_variety_id', 'area_unit_id', 'created_by', 'updated_by', pre=True)
     def convert_uuid_to_str(cls, v):

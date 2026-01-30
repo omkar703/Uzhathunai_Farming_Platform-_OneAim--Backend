@@ -13,9 +13,9 @@ from app.core.cache import cache_service
 from app.models.crop import Crop
 from app.models.plot import Plot
 from app.models.farm import Farm
-from app.models.crop_data import CropVariety, CropVarietyTranslation
+from app.models.crop_data import CropVariety, CropVarietyTranslation, CropType, CropTypeTranslation
 from app.models.enums import CropLifecycle
-from app.schemas.crop import CropCreate, CropUpdate, CropResponse
+from app.schemas.crop import CropCreate, CropUpdate, CropResponse, CropTypeNested, CropVarietyNested
 
 logger = get_logger(__name__)
 
@@ -216,8 +216,8 @@ class CropService:
             .join(Farm)
             .options(
                 joinedload(Crop.plot),
-                joinedload(Crop.crop_type),
-                joinedload(Crop.crop_variety),
+                joinedload(Crop.crop_type).joinedload(CropType.translations),
+                joinedload(Crop.crop_variety).joinedload(CropVariety.translations),
                 joinedload(Crop.area_unit)
             )
             .filter(
@@ -636,6 +636,17 @@ class CropService:
         Returns:
             Crop response schema
         """
+        # Calculate expected harvest date
+        expected_harvest_date = None
+        if crop.planted_date and crop.crop_variety and crop.crop_variety.variety_metadata:
+            maturity_days = crop.crop_variety.variety_metadata.get("maturity_days")
+            if maturity_days:
+                try:
+                    from datetime import timedelta
+                    expected_harvest_date = crop.planted_date + timedelta(days=int(maturity_days))
+                except (ValueError, TypeError):
+                    pass
+
         return CropResponse(
             id=str(crop.id),
             plot_id=str(crop.plot_id),
@@ -643,6 +654,8 @@ class CropService:
             description=crop.description,
             crop_type_id=str(crop.crop_type_id) if crop.crop_type_id else None,
             crop_variety_id=str(crop.crop_variety_id) if crop.crop_variety_id else None,
+            crop_type=CropTypeNested.from_orm(crop.crop_type) if crop.crop_type else None,
+            crop_variety=CropVarietyNested.from_orm(crop.crop_variety) if crop.crop_variety else None,
             area=crop.area,
             area_unit_id=str(crop.area_unit_id) if crop.area_unit_id else None,
             plant_count=crop.plant_count,
@@ -657,5 +670,11 @@ class CropService:
             created_at=crop.created_at,
             updated_at=crop.updated_at,
             created_by=str(crop.created_by) if crop.created_by else None,
-            updated_by=str(crop.updated_by) if crop.updated_by else None
+            updated_by=str(crop.updated_by) if crop.updated_by else None,
+            
+            # Aliases
+            variety=CropVarietyNested.from_orm(crop.crop_variety) if crop.crop_variety else None,
+            sowing_date=crop.planted_date,
+            status=crop.lifecycle.value if crop.lifecycle else None,
+            expected_harvest_date=expected_harvest_date
         )

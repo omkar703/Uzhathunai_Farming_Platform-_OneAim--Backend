@@ -139,6 +139,7 @@ class TemplateParameterResponse(BaseModel):
     is_required: bool
     sort_order: int
     name: Optional[str] = None
+    label: Optional[str] = None
     parameter_snapshot: Optional[Dict[str, Any]]
     created_at: datetime
 
@@ -165,6 +166,7 @@ class TemplateSectionDetail(BaseModel):
     section_id: UUID
     section_code: str
     section_name: str  # Default language
+    name: str  # Alias for section_name, expected by frontend
     sort_order: int
     parameters: List[TemplateParameterResponse]
 

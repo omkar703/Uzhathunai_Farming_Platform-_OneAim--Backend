@@ -34,11 +34,6 @@ def get_my_invitations(
 ):
     """
     Get invitations for current user.
-    
-    Returns invitations sent to user's email address.
-    
-    Supports filtering by status (PENDING, ACCEPTED, REJECTED, EXPIRED, CANCELLED).
-    Returns paginated results with metadata.
     """
     service = InvitationService(db)
     invitations, total = service.get_user_invitations(
@@ -59,6 +54,23 @@ def get_my_invitations(
             "total_pages": (total + limit - 1) // limit if total > 0 else 0
         }
     }
+
+
+@router.get(
+    "/my-invitations",
+    response_model=BaseResponse[dict],
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False
+)
+def get_my_invitations_alias(
+    status_filter: Optional[InvitationStatus] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Alias for /me endpoint to match frontend expectation."""
+    return get_my_invitations(status_filter, page, limit, current_user, db)
 
 
 @router.post(

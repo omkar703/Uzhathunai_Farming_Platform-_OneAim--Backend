@@ -68,6 +68,23 @@ class CropType(Base):
     translations = relationship("CropTypeTranslation", back_populates="crop_type", cascade="all, delete-orphan")
     varieties = relationship("CropVariety", back_populates="crop_type", cascade="all, delete-orphan")
 
+    @property
+    def name(self):
+        """
+        Return the name from translations.
+        Prioritizes English ('en'), then falls back to the first available translation.
+        """
+        if not self.translations:
+            return self.code  # Fallback to code if no translations
+            
+        # Try to find English translation
+        for t in self.translations:
+            if t.language_code == 'en':
+                return t.name
+                
+        # Fallback to first available translation
+        return self.translations[0].name
+
 
 class CropTypeTranslation(Base):
     """
@@ -106,6 +123,23 @@ class CropVariety(Base):
     # Relationships
     crop_type = relationship("CropType", back_populates="varieties")
     translations = relationship("CropVarietyTranslation", back_populates="crop_variety", cascade="all, delete-orphan")
+
+    @property
+    def name(self):
+        """
+        Return the name from translations.
+        Prioritizes English ('en'), then falls back to the first available translation.
+        """
+        if not self.translations:
+            return self.code  # Fallback to code if no translations
+            
+        # Try to find English translation
+        for t in self.translations:
+            if t.language_code == 'en':
+                return t.name
+                
+        # Fallback to first available translation
+        return self.translations[0].name
 
 
 class CropVarietyTranslation(Base):

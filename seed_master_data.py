@@ -95,6 +95,109 @@ def seed_master_data():
             else:
                 print(f"Unit {unit_data['code']} already exists.")
 
+        # 3. Seed Reference Data Types & Data (Application Methods)
+        from app.models.reference_data import ReferenceDataType, ReferenceData, ReferenceDataTranslation
+        
+        # 3.1 Create Type
+        type_code = "application_methods"
+        ref_type = db.query(ReferenceDataType).filter(ReferenceDataType.code == type_code).first()
+        if not ref_type:
+            ref_type = ReferenceDataType(
+                id=uuid4(),
+                code=type_code,
+                name="Application Methods",
+                description="Methods of applying inputs like fertilizer or pesticide"
+            )
+            db.add(ref_type)
+            db.flush()
+            print(f"Created ReferenceDataType: {type_code}")
+
+        # 3.2 Create Methods
+        methods = [
+            {"code": "FOLIAR_SPRAY", "name": "Foliar Spray", "requires_concentration": True, "order": 1},
+            {"code": "SOIL_APPLICATION", "name": "Soil Application", "requires_concentration": False, "order": 2},
+            {"code": "DRIP_IRRIGATION", "name": "Drip Irrigation", "requires_concentration": True, "order": 3},
+            {"code": "BROADCASTING", "name": "Broadcasting", "requires_concentration": False, "order": 4},
+            {"code": "SEED_TREATMENT", "name": "Seed Treatment", "requires_concentration": True, "order": 5},
+            {"code": "DRENCHING", "name": "Drenching", "requires_concentration": True, "order": 6}
+        ]
+
+        print("\nSeeding Application Methods...")
+        for m in methods:
+            existing = db.query(ReferenceData).filter(
+                ReferenceData.type_id == ref_type.id,
+                ReferenceData.code == m["code"]
+            ).first()
+
+            if not existing:
+                ref_data = ReferenceData(
+                    id=uuid4(),
+                    type_id=ref_type.id,
+                    code=m["code"],
+                    sort_order=m["order"],
+                    is_active=True,
+                    reference_metadata={"requires_concentration": m["requires_concentration"]}
+                )
+                db.add(ref_data)
+                db.flush()
+
+                trans = ReferenceDataTranslation(
+                    reference_data_id=ref_data.id,
+                    language_code="en",
+                    display_name=m["name"],
+                    description=m["name"]
+                )
+                db.add(trans)
+                print(f"Created method: {m['code']}")
+            else:
+                print(f"Method {m['code']} already exists.")
+        
+        # 4. Seed Tasks
+        from app.models.reference_data import Task, TaskTranslation
+        from app.models.enums import TaskCategory
+        
+        tasks = [
+            {
+                "code": "GENERAL_APPLICATION",
+                "category": TaskCategory.FARMING,
+                "name": "General Application",
+                "desc": "General task for applying inputs or performing activities",
+                "requires_input": True,
+                "requires_conc": True,
+                "requires_labor": True
+            }
+        ]
+        
+        print("\nSeeding Tasks...")
+        for t_data in tasks:
+            existing = db.query(Task).filter(Task.code == t_data["code"]).first()
+            if not existing:
+                task = Task(
+                    id=uuid4(),
+                    code=t_data["code"],
+                    category=t_data["category"],
+                    requires_input_items=t_data["requires_input"],
+                    requires_concentration=t_data["requires_conc"],
+                    requires_labor=t_data["requires_labor"],
+                    sort_order=99,
+                    is_active=True
+                )
+                db.add(task)
+                db.flush()
+                
+                trans = TaskTranslation(
+                    task_id=task.id,
+                    language_code="en",
+                    name=t_data["name"],
+                    description=t_data["desc"]
+                )
+                db.add(trans)
+                print(f"Created task: {t_data['code']}")
+            else:
+                print(f"Task {t_data['code']} already exists.")
+
+        db.commit()
+
         db.commit()
         print("\nSeeding completed successfully!")
 

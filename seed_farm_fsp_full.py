@@ -89,6 +89,15 @@ def seed_farm_fsp_full():
             )
             db.add(fsp_org)
             db.commit()
+            
+            # Also add fsp_admin as FSP_OWNER
+            role = db.query(Role).filter(Role.code == "FSP_OWNER").first()
+            if role:
+                member = OrgMember(id=uuid.uuid4(), user_id=fsp_admin.id, organization_id=fsp_org.id, status=MemberStatus.ACTIVE)
+                db.add(member)
+                db.add(OrgMemberRole(id=uuid.uuid4(), user_id=fsp_admin.id, organization_id=fsp_org.id, role_id=role.id, is_primary=True))
+                db.commit()
+            
             print(f"Created FSP Org: {fsp_org.name}")
         else:
             print(f"FSP Org exists: {fsp_org.name}")
@@ -323,6 +332,15 @@ def seed_farm_fsp_full():
             )
             db.add(farmer_org)
             db.commit()
+
+            # Also add farmer_admin as OWNER
+            role = db.query(Role).filter(Role.code == "OWNER").first()
+            if role:
+                member = OrgMember(id=uuid.uuid4(), user_id=farmer_admin.id, organization_id=farmer_org.id, status=MemberStatus.ACTIVE)
+                db.add(member)
+                db.add(OrgMemberRole(id=uuid.uuid4(), user_id=farmer_admin.id, organization_id=farmer_org.id, role_id=role.id, is_primary=True))
+                db.commit()
+
             print(f"Created Farmer Org: {farmer_org.name}")
         else:
             print(f"Farmer Org exists: {farmer_org.name}")
@@ -334,14 +352,8 @@ def seed_farm_fsp_full():
                 id=uuid.uuid4(),
                 organization_id=farmer_org.id,
                 name="Green Valley Farm",
-                total_area=10.0,
-                area_unit=MeasurementUnitCategory.AREA, # This might be wrong type, checking enums... 
-                # Actually farm model usually stores unit as string or diff enum. 
-                # Checking models/farm.py would be best but let's guess standard 'ACRE' or use known enum.
-                # Re-checking enums.py... MeasurementUnitCategory is for category. 
-                # Let's assume 'ACRE' string if unit column matches, or wait... 
-                # I'll check the error if it fails, but better to check farm.py if I can.
-                # Assuming 'ACRE' for now.
+                area=10.0,
+                area_unit_id=(db.execute(text("SELECT id FROM measurement_units WHERE code = 'ACRE'")).fetchone() or [None])[0],
                 created_by=farmer_admin.id
             )
             # Actually let's assume 'ACRE' is valid or leave it null if nullable
