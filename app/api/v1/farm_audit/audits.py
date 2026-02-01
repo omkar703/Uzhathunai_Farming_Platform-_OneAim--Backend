@@ -1013,7 +1013,7 @@ def publish_audit(
     """
     Publish audit to farmer.
     
-    Transitions status to SUBMITTED_TO_FARMER.
+    Transitions status to SHARED.
     Should be called after review (or directly if no review needed).
     """
     logger.info(
@@ -1024,7 +1024,7 @@ def publish_audit(
     service = WorkflowService(db)
     audit = service.transition_status(
         audit_id=audit_id,
-        to_status=AuditStatus.SUBMITTED_TO_FARMER,
+        to_status=AuditStatus.SHARED,
         user_id=current_user.id
     )
     

@@ -1,0 +1,47 @@
+UPDATE 2
+
+[93m=== 1. Registering Users ===[0m
+[92m✓ Farmer Registered[0m
+[92m✓ FSP Registered[0m
+
+[93m=== 2. Creating Organizations ===[0m
+[92m✓ Organizations Created & Approved[0m
+
+[93m=== 3. Seeding Template Components ===[0m
+✓ Section Created: 0588aa5f-54d5-4544-a0b6-9535a4787776
+✓ Parameter 1 Created
+✓ Parameter 2 Created
+✓ Parameter 3 Created
+✓ Parameter 4 Created
+✓ Parameter 5 Created
+✓ Parameter 6 Created
+✓ Parameter 7 Created
+✓ Parameter 8 Created
+✓ Parameter 9 Created
+✓ Parameter 10 Created
+[92m✓ Template Full Config Created[0m
+
+[93m=== 4. Creating Farm/Crop/WorkOrder ===[0m
+
+[93m=== 5. Audit Execution ===[0m
+✓ Audit Created: 6ec94163-4bb8-4b65-85e9-dd4a37678d8e
+
+[93m=== 6. Auditor Submits Response (10 items) ===[0m
+✓ Submitted 10 responses
+✓ Audit moved to IN_PROGRESS
+✓ Audit Submitted (Status: SUBMITTED)
+
+[93m=== 7. Reviewer Review & Flagging (Select 3/10) ===[0m
+[92m✓ Reviews Created (3 Flagged, 7 Unflagged)[0m
+✓ Audit moved to REVIEWED
+✓ Audit moved to FINALIZED
+[92m✓ Audit Published to Farmer[0m
+
+[93m=== 8. Farmer View Verification ===[0m
+Verifying Farmer Response Structure:
+   Compliance Score: 100.0%
+   Sections Count: 1
+   Parameters Count: 3
+[92m✓ Correct number of parameters visible (3)[0m
+[92m✓ All expected parameters are present[0m
+   First Param: Param 1 = 10.5000 units (Note: Review comment for Param 1)

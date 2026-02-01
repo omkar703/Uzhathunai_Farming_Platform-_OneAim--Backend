@@ -236,10 +236,32 @@ class ReportService:
         Get only flagged responses (is_flagged_for_report = true).
         
         Uses parameter_snapshot for display text.
+        Includes section information.
         
         Requirements: 18.2, 18.6
         """
-        # Get all responses with reviews that are flagged
+        # Pre-fetch template sections to map to section_id
+        from app.models.template import TemplateSection
+        template_sections = self.db.query(TemplateSection).filter(
+            TemplateSection.template_id == audit.template_id
+        ).all()
+        
+        # Map template_section.id (UUID) -> section_id (UUID)
+        ts_map = {ts.id: str(ts.section_id) for ts in template_sections}
+        
+        # Map section_id -> section_name from snapshot
+        section_name_map = {}
+        template_snapshot = audit.template_snapshot or {}
+        for section in template_snapshot.get("sections", []):
+            sec_id = section.get("section_id")
+            translations = section.get("translations", {})
+            name = translations.get(language, {}).get("name", "")
+            if not name and translations:
+                name = translations.get("en", {}).get("name", "")
+            if sec_id:
+                section_name_map[sec_id] = name
+
+        # Get all responses with reviewing that are flagged
         flagged_responses = []
         
         responses = self.db.query(AuditResponse).filter(
@@ -274,16 +296,27 @@ class ReportService:
                         parameter_snapshot,
                         language
                     )
+
+                    # Determine section info
+                    section_id = ts_map.get(param_instance.template_section_id)
+                    section_name = section_name_map.get(section_id, "Unknown Section")
                     
                     flagged_responses.append({
                         "id": response.id,
                         "audit_id": response.audit_id,
                         "audit_parameter_instance_id": response.audit_parameter_instance_id,
+                        "section_id": section_id,
+                        "section_name": section_name,
                         "parameter_name": param_name,
                         "parameter_code": parameter_snapshot.get("code", ""),
                         "parameter_type": parameter_snapshot.get("parameter_type", ""),
                         "response_value": response_value,
-                        "notes": response.notes,
+                        "notes": review.response_text if (review and review.response_text != response.response_text) else response.notes, # Use review notes/comment if different? Or keep response notes? Spec says review can change answers. 
+                        # Reviewer comment is actually typically separate but if they override answer, the text might be here.
+                        # `AuditReview` has `response_text`.
+                        # Let's keep original notes for now unless explicitly asked to show reviewer comments as notes.
+                        # Actually reviewer comments should probably be shown.
+                        # AuditResponse.notes is usually auditor notes.
                         "created_at": response.created_at,
                         "updated_at": response.updated_at,
                         "created_by": response.created_by

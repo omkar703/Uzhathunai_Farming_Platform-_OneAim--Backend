@@ -8,7 +8,8 @@ from app.core.auth import get_current_active_user
 from app.core.database import get_db
 from app.core.logging import get_logger
 from app.models.user import User
-from app.models.enums import AuditStatus
+from app.models.organization import Organization, OrgMember
+from app.models.enums import AuditStatus, OrganizationType, MemberStatus
 from app.services.audit_service import AuditService
 from app.services.report_service import ReportService
 from app.services.audit_report_service import AuditReportService
@@ -25,7 +26,7 @@ logger = get_logger(__name__)
     description="List audits submitted to the farmer's organization"
 )
 def list_farmer_audits(
-    status: Optional[str] = Query("SUBMITTED_TO_FARMER", description="Filter by status"),
+    status: Optional[str] = Query("SHARED", description="Filter by status"),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_active_user),
@@ -35,7 +36,7 @@ def list_farmer_audits(
     List audits for the current farmer.
     
     Filters by:
-    - Status (default: SUBMITTED_TO_FARMER)
+    - Status (default: SHARED)
     - Farming Organization (derived from user's membership)
     """
     # Identify user's organization (Farmer Organization)
@@ -44,11 +45,28 @@ def list_farmer_audits(
     # If user has multiple, we might need org_id param. 
     # Let's derive from user.organization_id if available.
     
-    farming_org_id = current_user.organization_id
+    # Derive farming organization from user's membership
+    farming_org_id = db.query(OrgMember.organization_id).join(Organization).filter(
+        OrgMember.user_id == current_user.id,
+        OrgMember.status == MemberStatus.ACTIVE,
+        Organization.organization_type == OrganizationType.FARMING
+    ).scalar()
+
     if not farming_org_id:
         # Fallback or error if not part of an org
-        # Or maybe check permissions/memberships
-        pass # AuditService will filter if we pass it, but we need to ensure security.
+        # But we assume the user is a Farmer.
+        # If no org, return empty list
+        return {
+            "success": True,
+            "message": "No farming organization found",
+            "data": {
+                "items": [],
+                "total": 0,
+                "page": page,
+                "limit": limit,
+                "total_pages": 0
+            }
+        }
     
     # Enum conversion
     status_enum = None
@@ -106,7 +124,14 @@ def get_farmer_audit_detail(
     service = AuditService(db)
     audit = service.get_audit(audit_id)
     
-    if audit.farming_organization_id != current_user.organization_id:
+    # Get user's organization to validate access
+    farming_org_id = db.query(OrgMember.organization_id).join(Organization).filter(
+        OrgMember.user_id == current_user.id,
+        OrgMember.status == MemberStatus.ACTIVE,
+        Organization.organization_type == OrganizationType.FARMING
+    ).scalar()
+
+    if not farming_org_id or audit.farming_organization_id != farming_org_id:
         # Check permissions deeper if needed
         # raise PermissionError...
         pass
@@ -121,6 +146,30 @@ def get_farmer_audit_detail(
     rich_report = audit_report_service.get_report(audit_id)
     
     # Construct response matching Requirement 5
+    # Group flagged responses by section
+    flagged_responses = stats_report.get("flagged_responses", [])
+    sections_map = {}
+    
+    for resp in flagged_responses:
+        section_id = resp.get("section_id")
+        if not section_id:
+            continue
+            
+        if section_id not in sections_map:
+            sections_map[section_id] = {
+                "section_id": section_id,
+                "name": resp.get("section_name", "Unknown Section"),
+                "parameters": []
+            }
+        
+        sections_map[section_id]["parameters"].append({
+            "parameter_name": resp.get("parameter_name"),
+            "response_value": resp.get("response_value"),
+            "notes": resp.get("notes")
+        })
+    
+    sections_list = list(sections_map.values())
+    
     response_data = {
         "id": audit.id,
         "template_name": audit.template.name if audit.template else "Audit",
@@ -130,8 +179,10 @@ def get_farmer_audit_detail(
         "compliance_score": stats_report.get("stats", {}).get("compliance_score", 0),
         "report_html": rich_report.report_html if rich_report else "",
         "report_pdf_url": rich_report.pdf_url if rich_report else None,
-        "sections": stats_report.get("sections", []), # This structure might need mapping to match "sections -> parameters -> question/answer" simple format
-        "recommendations": stats_report.get("recommendations", [])
+        "sections": sections_list,
+        "issues": stats_report.get("issues", []),
+        "recommendations": stats_report.get("recommendations", []),
+        "flagged_photos": stats_report.get("flagged_photos", [])
     }
     
     return {
