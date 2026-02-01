@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, model_validator
 from app.schemas.farm import ReferenceDataNested
 
 
@@ -113,6 +113,7 @@ class PlotWaterSourceResponse(BaseModel):
     water_source_id: str
     created_at: datetime
     reference_data: ReferenceDataNested
+    name: Optional[str] = None
     
     @validator('id', 'plot_id', 'water_source_id', pre=True)
     def convert_uuid_to_str(cls, v):
@@ -129,6 +130,13 @@ class PlotWaterSourceResponse(BaseModel):
         if hasattr(v, '__dict__'):
             return v # Let Pydantic from_attributes handle it
         return v
+
+    @model_validator(mode='after')
+    def populate_name(self):
+        """Populate name from reference_data if available."""
+        if not self.name and self.reference_data:
+            self.name = self.reference_data.display_name or self.reference_data.code
+        return self
     
     class Config:
         from_attributes = True
@@ -141,6 +149,7 @@ class PlotSoilTypeResponse(BaseModel):
     soil_type_id: str
     created_at: datetime
     reference_data: ReferenceDataNested
+    name: Optional[str] = None
     
     @validator('id', 'plot_id', 'soil_type_id', pre=True)
     def convert_uuid_to_str(cls, v):
@@ -157,6 +166,13 @@ class PlotSoilTypeResponse(BaseModel):
         if hasattr(v, '__dict__'):
             return v # Let Pydantic from_attributes handle it
         return v
+
+    @model_validator(mode='after')
+    def populate_name(self):
+        """Populate name from reference_data if available."""
+        if not self.name and self.reference_data:
+            self.name = self.reference_data.display_name or self.reference_data.code
+        return self
     
     class Config:
         from_attributes = True
@@ -169,6 +185,7 @@ class PlotIrrigationModeResponse(BaseModel):
     irrigation_mode_id: str
     created_at: datetime
     reference_data: ReferenceDataNested
+    name: Optional[str] = None
     
     @validator('id', 'plot_id', 'irrigation_mode_id', pre=True)
     def convert_uuid_to_str(cls, v):
@@ -185,6 +202,13 @@ class PlotIrrigationModeResponse(BaseModel):
         if hasattr(v, '__dict__'):
             return v # Let Pydantic from_attributes handle it
         return v
+
+    @model_validator(mode='after')
+    def populate_name(self):
+        """Populate name from reference_data if available."""
+        if not self.name and self.reference_data:
+            self.name = self.reference_data.display_name or self.reference_data.code
+        return self
     
     class Config:
         from_attributes = True
@@ -200,6 +224,8 @@ class PlotResponse(BaseModel):
     area: Optional[Decimal]
     area_unit_id: Optional[str]
     plot_attributes: Optional[Dict[str, Any]] = Field(None, description="Plot attributes (soil EC, pH, water EC, pH, etc.)")
+    soil_texture: Optional[str] = Field(None, description="Soil texture from attributes")
+    topography: Optional[str] = Field(None, description="Topography from attributes")
     water_sources: List[PlotWaterSourceResponse] = Field(default_factory=list, description="Water sources with reference data")
     soil_types: List[PlotSoilTypeResponse] = Field(default_factory=list, description="Soil types with reference data")
     irrigation_modes: List[PlotIrrigationModeResponse] = Field(default_factory=list, description="Irrigation modes with reference data")
@@ -215,6 +241,17 @@ class PlotResponse(BaseModel):
         if v is not None:
             return str(v)
         return v
+    
+    @model_validator(mode='after')
+    def populate_attributes(self):
+        """Populate soil_texture and topography from plot_attributes if available."""
+        attrs = self.plot_attributes
+        if attrs and isinstance(attrs, dict):
+            if not self.soil_texture:
+                self.soil_texture = attrs.get('soil_texture')
+            if not self.topography:
+                self.topography = attrs.get('topography') or attrs.get('slope')
+        return self
     
     class Config:
         from_attributes = True

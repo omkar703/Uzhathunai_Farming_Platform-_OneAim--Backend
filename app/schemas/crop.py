@@ -48,6 +48,11 @@ class CropUpdate(BaseModel):
     area: Optional[Decimal] = Field(None, ge=0)
     area_unit_id: Optional[UUID] = None
     plant_count: Optional[int] = Field(None, ge=0)
+    planted_date: Optional[date] = None
+    
+    # Frontend Aliases / Compatibility
+    planted_area: Optional[Decimal] = Field(None, ge=0)
+    sowing_date: Optional[date] = None
     
     @validator('name')
     def validate_name(cls, v):
@@ -120,11 +125,16 @@ class CropResponse(BaseModel):
     created_by: Optional[str]
     updated_by: Optional[str]
     
-    # Frontend Aliases
-    variety: Optional[CropVarietyNested] = None
-    sowing_date: Optional[date] = None
-    status: Optional[str] = None
-    expected_harvest_date: Optional[date] = None
+    # Validation Aliases for specific frontend requirements
+    variety: Optional[CropVarietyNested] = Field(None, description="Alias for crop_variety")
+    sowing_date: Optional[date] = Field(None, description="Alias for planted_date")
+    status: Optional[str] = Field(None, description="Alias for lifecycle value")
+    expected_harvest_date: Optional[date] = Field(None, description="Calculated harvest date")
+    planted_area: Optional[Decimal] = Field(None, description="Alias for area")
+    planned_area: Optional[Decimal] = Field(None, description="Alias for area")
+    estimated_yield: Optional[float] = Field(None, description="Estimated yield")
+    yield_unit: Optional[str] = Field(None, description="Unit for estimated yield")
+    season: Optional[str] = Field(None, description="Calculated season (e.g. Kharif 2024)")
     
     @validator('id', 'plot_id', 'crop_type_id', 'crop_variety_id', 'area_unit_id', 'created_by', 'updated_by', pre=True)
     def convert_uuid_to_str(cls, v):

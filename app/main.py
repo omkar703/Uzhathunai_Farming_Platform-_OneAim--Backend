@@ -8,8 +8,6 @@ from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 import time
 import uuid
-from starlette.requests import ClientDisconnect
-from anyio import EndOfStream
 
 from app.core.config import settings
 from app.core.logging import configure_logging, log_application_startup, log_application_shutdown, get_logger
@@ -43,12 +41,7 @@ app = FastAPI(
     default_response_class=JSONResponse
 )
 
-@app.middleware("http")
-async def debug_logging_middleware(request: Request, call_next):
-    print(f"DEBUG: Middleware received request: {request.method} {request.url.path}", flush=True)
-    response = await call_next(request)
-    print(f"DEBUG: Middleware sending response: {response.status_code}", flush=True)
-    return response
+
 
 # Configure CORS
 app.add_middleware(
@@ -80,10 +73,8 @@ async def logging_middleware(request: Request, call_next):
     
     start_time = time.time()
     
-    print(f"DEBUGGING_HANG: Middleware {request_id} calling call_next", flush=True)
     try:
         response = await call_next(request)
-        print(f"DEBUGGING_HANG: Middleware {request_id} returned from call_next", flush=True)
         process_time = (time.time() - start_time) * 1000
         
         # Log request completion
@@ -232,22 +223,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             errors[field] = []
         errors[field].append(error["msg"])
     
-    # Log validation error
-    try:
-        body = await request.body()
-        body_str = body.decode() if body else None
-    except (ClientDisconnect, EndOfStream):
-        body_str = "Client disconnected before body could be read"
-    except Exception as e:
-        body_str = f"Error reading body: {str(e)}"
-
+    # Log validation error (without reading body to avoid hangs)
     logger.warning(
         "Validation error",
         extra={
             "request_id": getattr(request.state, "request_id", "unknown"),
             "path": str(request.url.path),
-            "errors": errors,
-            "body": body_str
+            "errors": errors
         }
     )
     

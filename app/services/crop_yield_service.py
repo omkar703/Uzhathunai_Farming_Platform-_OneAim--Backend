@@ -33,8 +33,8 @@ class CropYieldService:
     def create_yield(
         self,
         crop_id: UUID,
-        data: CropYieldCreate,
         org_id: UUID,
+        data: CropYieldCreate,
         user_id: UUID
     ) -> CropYieldResponse:
         """

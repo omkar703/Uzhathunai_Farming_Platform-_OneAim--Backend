@@ -179,6 +179,8 @@ class ReferenceDataNested(BaseModel):
         from_attributes = True
 
 
+from pydantic import BaseModel, Field, validator, model_validator
+
 class FarmWaterSourceResponse(BaseModel):
     """Schema for farm water source response."""
     id: str
@@ -186,6 +188,7 @@ class FarmWaterSourceResponse(BaseModel):
     water_source_id: str
     created_at: datetime
     reference_data: ReferenceDataNested
+    name: Optional[str] = None
     
     @validator('id', 'farm_id', 'water_source_id', pre=True)
     def convert_uuid_to_str(cls, v):
@@ -204,6 +207,13 @@ class FarmWaterSourceResponse(BaseModel):
             return v # Let Pydantic from_attributes handle it
         return v
     
+    @model_validator(mode='after')
+    def populate_name(self):
+        """Populate name from reference_data if available."""
+        if not self.name and self.reference_data:
+            self.name = self.reference_data.display_name or self.reference_data.code
+        return self
+
     class Config:
         from_attributes = True
 
@@ -215,6 +225,7 @@ class FarmSoilTypeResponse(BaseModel):
     soil_type_id: str
     created_at: datetime
     reference_data: ReferenceDataNested
+    name: Optional[str] = None
     
     @validator('id', 'farm_id', 'soil_type_id', pre=True)
     def convert_uuid_to_str(cls, v):
@@ -231,6 +242,13 @@ class FarmSoilTypeResponse(BaseModel):
         if hasattr(v, '__dict__'):
             return v # Let Pydantic from_attributes handle it
         return v
+
+    @model_validator(mode='after')
+    def populate_name(self):
+        """Populate name from reference_data if available."""
+        if not self.name and self.reference_data:
+            self.name = self.reference_data.display_name or self.reference_data.code
+        return self
     
     class Config:
         from_attributes = True
@@ -243,6 +261,7 @@ class FarmIrrigationModeResponse(BaseModel):
     irrigation_mode_id: str
     created_at: datetime
     reference_data: ReferenceDataNested
+    name: Optional[str] = None
     
     @validator('id', 'farm_id', 'irrigation_mode_id', pre=True)
     def convert_uuid_to_str(cls, v):
@@ -259,7 +278,14 @@ class FarmIrrigationModeResponse(BaseModel):
         if hasattr(v, '__dict__'):
             return v # Let Pydantic from_attributes handle it
         return v
-    
+
+    @model_validator(mode='after')
+    def populate_name(self):
+        """Populate name from reference_data if available."""
+        if not self.name and self.reference_data:
+            self.name = self.reference_data.display_name or self.reference_data.code
+        return self
+
     class Config:
         from_attributes = True
 
@@ -276,6 +302,7 @@ class FarmResponse(BaseModel):
     state: Optional[str]
     pincode: Optional[str]
     location: Optional[Dict[str, Any]] = Field(None, description="Farm location as GeoJSON Point")
+    location_details: Optional[Dict[str, Any]] = Field(None, description="Location details with lat/lon")
     boundary: Optional[Dict[str, Any]] = Field(None, description="Farm boundary as GeoJSON Polygon")
     area: Optional[Decimal]
     area_unit_id: Optional[str]

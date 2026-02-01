@@ -138,7 +138,7 @@ def update_plot(
     # Get organization ID from JWT token with Smart Inference
     org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
-    plot = service.update_plot(plot_id, org_id, data, current_user.id)
+    plot = service.update_plot(plot_id, data, org_id, current_user.id)
     return {
         "success": True,
         "message": "Plot updated successfully",
