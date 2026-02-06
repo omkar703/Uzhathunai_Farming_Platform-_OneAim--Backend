@@ -10,7 +10,12 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from PIL import Image
 import io
+import io
 import os
+import boto3
+from botocore.exceptions import ClientError
+
+from app.core.config import settings
 
 from app.models.audit import AuditResponse, AuditResponsePhoto, AuditParameterInstance
 from app.models.enums import PhotoSourceType
@@ -410,9 +415,6 @@ class PhotoService:
         """
         Upload file to storage (S3 or local).
         
-        For now, this is a placeholder that stores locally.
-        In production, this should upload to S3.
-        
         Args:
             file_data: File bytes
             file_key: Storage key
@@ -420,21 +422,50 @@ class PhotoService:
         Returns:
             File URL
         """
-        # TODO: Implement S3 upload when AWS credentials are configured
-        # For now, store locally
-        upload_dir = "uploads"
-        os.makedirs(upload_dir, exist_ok=True)
-        
-        # Create subdirectories
-        file_path = os.path.join(upload_dir, file_key)
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        
-        # Write file
-        with open(file_path, 'wb') as f:
-            f.write(file_data)
-        
-        # Return URL (in production, this would be S3 URL)
-        return f"/uploads/{file_key}"
+        if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
+            try:
+                s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                    region_name=settings.AWS_REGION_NAME
+                )
+                
+                s3_client.put_object(
+                    Bucket=settings.AWS_S3_BUCKET,
+                    Key=file_key,
+                    Body=file_data,
+                    ContentType='image/jpeg'
+                )
+                
+                # construct URL
+                url = f"https://{settings.AWS_S3_BUCKET}.s3.{settings.AWS_REGION_NAME}.amazonaws.com/{file_key}"
+                return url
+            except ClientError as e:
+                logger.error(f"S3 upload failed: {e}", exc_info=True)
+                # Fallback to local? Or raise error?
+                # For now let's raise error as S3 is configured but failed
+                raise ServiceError(
+                    message="Failed to upload photo to storage",
+                    error_code="STORAGE_UPLOAD_FAILED",
+                    details={"error": str(e)}
+                )
+        else:
+            # Local storage
+            upload_dir = settings.UPLOAD_DIR
+            os.makedirs(upload_dir, exist_ok=True)
+            
+            # Create subdirectories
+            file_path = os.path.join(upload_dir, file_key)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            # Write file
+            with open(file_path, 'wb') as f:
+                f.write(file_data)
+            
+            # Return URL (relative for local)
+            # Assuming there is a static file server serving /uploads
+            return f"/uploads/{file_key}"
     
     def _delete_from_storage(self, file_key: Optional[str]) -> None:
         """
@@ -446,14 +477,29 @@ class PhotoService:
         if not file_key:
             return
         
-        # TODO: Implement S3 deletion when AWS credentials are configured
-        # For now, delete locally
-        try:
-            file_path = os.path.join("uploads", file_key)
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        except Exception as e:
-            logger.error(f"Failed to delete file {file_key}: {e}", exc_info=True)
+        if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
+            try:
+                s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                    region_name=settings.AWS_REGION_NAME
+                )
+                
+                s3_client.delete_object(
+                    Bucket=settings.AWS_S3_BUCKET,
+                    Key=file_key
+                )
+            except ClientError as e:
+                logger.error(f"Failed to delete file {file_key} from S3: {e}", exc_info=True)
+        else:
+            try:
+                upload_dir = settings.UPLOAD_DIR
+                file_path = os.path.join(upload_dir, file_key)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            except Exception as e:
+                logger.error(f"Failed to delete file {file_key}: {e}", exc_info=True)
     
     def generate_thumbnail(self, file_data: BinaryIO) -> bytes:
         """
@@ -480,3 +526,48 @@ class PhotoService:
                 message="Failed to generate thumbnail",
                 error_code="THUMBNAIL_GENERATION_FAILED"
             )
+
+    def toggle_photo_flag(
+        self,
+        audit_id: UUID,
+        photo_id: UUID,
+        is_flagged: bool,
+        user_id: UUID
+    ) -> AuditResponsePhoto:
+        """
+        Toggle the flagged status of a photo for the report.
+        
+        Args:
+            audit_id: Audit ID
+            photo_id: Photo ID
+            is_flagged: New flag status
+            user_id: User performing the action
+            
+        Returns:
+            Updated AuditResponsePhoto
+        """
+        photo = self.db.query(AuditResponsePhoto).filter(
+            AuditResponsePhoto.id == photo_id,
+            AuditResponsePhoto.audit_id == audit_id
+        ).first()
+        
+        if not photo:
+            raise NotFoundError(
+                message=f"Photo {photo_id} not found",
+                error_code="PHOTO_NOT_FOUND"
+            )
+            
+        photo.is_flagged_for_report = is_flagged
+        self.db.commit()
+        self.db.refresh(photo)
+        
+        logger.info(
+            "Photo flag updated",
+            extra={
+                "photo_id": str(photo.id),
+                "is_flagged": is_flagged,
+                "user_id": str(user_id)
+            }
+        )
+        
+        return photo

@@ -111,6 +111,7 @@ class ScheduleTask(Base):
     due_date = Column(Date, nullable=False, index=True)
     status = Column(SQLEnum(TaskStatus, name='task_status'), default=TaskStatus.NOT_STARTED, index=True)
     completed_date = Column(Date)
+    task_name = Column(String(200)) # Custom task name overriding the default
     task_details = Column(JSONB)
     notes = Column(Text)
     
@@ -131,9 +132,26 @@ class ScheduleTask(Base):
         return f"<ScheduleTask(id={self.id}, schedule_id={self.schedule_id}, due_date={self.due_date})>"
 
     @property
-    def task_name(self):
-        """Get the name of the underlying task."""
+    def task_type_name(self):
+        """Get the name of the underlying task Type."""
         return self.task.name if self.task else "Unknown Task"
+    
+    # Keeping task_name property as a bridge if needed? 
+    # Actually, if I have a column named task_name, the property must be removed or renamed.
+    # Let's rename the property to task_default_name if we want to keep it, 
+    # but the frontend expects 'task_name' in the response.
+    # The Pydantic model will pick up the 'task_name' column.
+    # Let's just remove the property and handle fallback in the service or schema if needed.
+    # However, 'task_name' as a property was useful for display.
+    # I'll rename the column to 'custom_task_name' internally if I want to keep the property 'task_name'.
+    # But the user specifically said "task_name column".
+    
+    # Decision: Rename the property to avoid conflict, 
+    # and maybe add a fallback in the service logic.
+    @property
+    def display_task_name(self):
+        """Get the custom name or fallback to task type name."""
+        return self.task_name or (self.task.name if self.task else "Unknown Task")
     
     @property
     def input_item_name(self):

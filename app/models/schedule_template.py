@@ -154,8 +154,9 @@ class ScheduleTemplateTask(Base):
     schedule_template_id = Column(UUID(as_uuid=True), ForeignKey('schedule_templates.id', ondelete='CASCADE'), nullable=False, index=True)
     task_id = Column(UUID(as_uuid=True), ForeignKey('tasks.id'), nullable=False, index=True)
     
-    # Task timing
+    # Task information
     day_offset = Column(Integer, nullable=False, index=True)
+    task_name = Column(String(200)) # Custom task name for the template task
     
     # Task details template (JSONB with calculation formulas)
     task_details_template = Column(JSONB, nullable=False)

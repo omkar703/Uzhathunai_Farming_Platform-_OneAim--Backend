@@ -410,3 +410,191 @@ curl -X POST "http://localhost:8000/api/v1/work-orders/4cd672bd-dc23-48fb-bcb7-2
 - Only to explicitly granted resources
 - Access automatically revoked on completion/cancellation
 - All actions logged in audit trail
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Audit Report Implementation Walkthrough
+Changes
+1. Photo Uploads (FSP App)
+File: 
+app/fsp/audits/components/AuditFormRenderer.tsx
+
+Added expo-image-picker integration.
+Implemented 
+handlePickImage
+ to select photos from the device library.
+Uploads photo immediately to auditService.uploadEvidence and displays a preview.
+2. Audit Curation (FSP App)
+File: 
+app/fsp/audits/[id]/curation.tsx
+
+Standalone Recommendations: Added UI and logic to create recommendations that are not tied to specific issues.
+Photo Flagging: Added logic to toggle specific evidence photos for inclusion in the final report.
+Issue Recommendations: Added "Recommendation" field to the "Add Issue" modal.
+3. Farmer Report View (Farmer App)
+File: 
+app/farmer/audits/[id]/report.tsx
+
+Implemented the "Finalized Report" view.
+Displays:
+Executive Summary: Audit details and status.
+Issues: Critical and Warning issues with their linked recommendations.
+Action Plan: List of standalone recommendations.
+Field Observations: Flagged parameter responses and selected evidence photos.
+Verification
+Automated Checks
+Ran tsc to verify type safety (waiting for results).
+Manual Verification Steps
+FSP: Open an audit, upload a photo for a "PHOTO" parameter. Verify preview appears.
+FSP: Go to "Review & Curate". Flag a parameter. Toggle a photo. Add a standalone recommendation.
+FSP: Finalize the report.
+Farmer: Open the audit in "Audit Center". Verify the new Report View is shown and contains the curated data.
+
+Comment
+Ctrl+Alt+M
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -173,7 +173,7 @@ class AuditE2ETest:
         }, headers=self.farmer_headers, timeout=TIMEOUT)
         
         if self.print_result("2.1 Create Farming Organization", resp):
-            self.farming_org_id = resp.json()["id"]
+            self.farming_org_id = resp.json()["data"]["id"]
             self.print_info(f"Farming Org ID: {self.farming_org_id}")
         else:
             return False
@@ -188,7 +188,7 @@ class AuditE2ETest:
         }, headers=self.fsp_headers, timeout=TIMEOUT)
         
         if self.print_result("2.2 Create FSP Organization", resp):
-            self.fsp_org_id = resp.json()["id"]
+            self.fsp_org_id = resp.json()["data"]["id"]
             self.print_info(f"FSP Org ID: {self.fsp_org_id}")
         else:
             return False
@@ -232,7 +232,7 @@ class AuditE2ETest:
         }, headers=self.farmer_headers, timeout=TIMEOUT)
         
         if self.print_result("3.1 Create Farm", resp):
-            self.farm_id = resp.json()["id"]
+            self.farm_id = resp.json()["data"]["id"]
             self.print_info(f"Farm ID: {self.farm_id}")
         else:
             return False
@@ -245,7 +245,7 @@ class AuditE2ETest:
         }, headers=self.farmer_headers, timeout=TIMEOUT)
         
         if self.print_result("3.2 Create Plot", resp):
-            self.plot_id = resp.json()["id"]
+            self.plot_id = resp.json()["data"]["id"]
             self.print_info(f"Plot ID: {self.plot_id}")
         else:
             return False
@@ -261,7 +261,7 @@ class AuditE2ETest:
         }, headers=self.farmer_headers, timeout=TIMEOUT)
         
         if self.print_result("3.3 Create Crop", resp):
-            self.crop_id = resp.json()["id"]
+            self.crop_id = resp.json()["data"]["id"]
             self.print_info(f"Crop ID: {self.crop_id}")
         else:
             return False
@@ -292,7 +292,7 @@ class AuditE2ETest:
         }, headers=self.farmer_headers, timeout=TIMEOUT)
         
         if self.print_result("4.1 Create Work Order", resp):
-            self.work_order_id = resp.json()["id"]
+            self.work_order_id = resp.json()["data"]["id"]
             self.print_info(f"Work Order ID: {self.work_order_id}")
         else:
             return False

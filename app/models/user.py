@@ -2,7 +2,7 @@
 User model and related authentication models for Uzhathunai v2.0.
 """
 from datetime import datetime
-from typing import Optional
+from typing import Optional, ClassVar
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -58,6 +58,14 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan"
     )
+
+    # Runtime attributes (not persisted)
+    _is_system_user: ClassVar[bool] = False
+    current_organization_id: ClassVar[Optional[uuid.UUID]] = None
+    
+    def is_system_user(self) -> bool:
+        """Check if user has system-level privileges."""
+        return getattr(self, '_is_system_user', False)
     
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email}, name={self.full_name})>"

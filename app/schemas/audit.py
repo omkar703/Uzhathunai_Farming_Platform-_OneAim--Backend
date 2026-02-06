@@ -251,6 +251,7 @@ class PhotoUploadResponse(BaseModel):
     file_url: str
     file_key: Optional[str]
     caption: Optional[str]
+    is_flagged_for_report: bool = False
     uploaded_at: datetime
     uploaded_by: Optional[UUID]
 
@@ -402,7 +403,9 @@ class IssueSeverityEnum(str, Enum):
 class IssueCreate(BaseModel):
     """Schema for creating an audit issue"""
     title: str = Field(..., min_length=1, max_length=200, description="Issue title")
+    title: str = Field(..., min_length=1, max_length=200, description="Issue title")
     description: Optional[str] = Field(None, description="Issue description")
+    recommendation: Optional[str] = Field(None, description="Optional recommendation for the issue")
     severity: IssueSeverityEnum = Field(..., description="Issue severity level")
 
     @validator('title')
@@ -425,6 +428,9 @@ class IssueUpdate(BaseModel):
     """Schema for updating an audit issue"""
     title: Optional[str] = Field(None, min_length=1, max_length=200, description="Issue title")
     description: Optional[str] = Field(None, description="Issue description")
+    title: Optional[str] = Field(None, min_length=1, max_length=200, description="Issue title")
+    description: Optional[str] = Field(None, description="Issue description")
+    recommendation: Optional[str] = Field(None, description="Optional recommendation for the issue")
     severity: Optional[IssueSeverityEnum] = Field(None, description="Issue severity level")
 
     @validator('title')
@@ -449,6 +455,9 @@ class IssueResponse(BaseModel):
     audit_id: UUID
     title: str
     description: Optional[str] = None
+    title: str
+    description: Optional[str] = None
+    recommendation: Optional[str] = None
     severity: Optional[IssueSeverityEnum] = None
     created_at: datetime
     created_by: Optional[UUID] = None
@@ -578,12 +587,54 @@ class AuditReportStats(BaseModel):
     issues_by_severity: Dict[str, int] = Field(..., description="Count of issues by severity")
 
 
+class AuditRecommendationCreate(BaseModel):
+    """Schema for creating a standalone audit recommendation"""
+    title: str = Field(..., min_length=1, max_length=200, description="Recommendation title")
+    description: Optional[str] = Field(None, description="Recommendation description")
+
+    @validator('title')
+    def validate_title(cls, v):
+        if not v.strip():
+            raise ValueError('Title cannot be empty')
+        return v.strip()
+
+
+class AuditRecommendationUpdate(BaseModel):
+    """Schema for updating a standalone audit recommendation"""
+    title: Optional[str] = Field(None, min_length=1, max_length=200, description="Recommendation title")
+    description: Optional[str] = Field(None, description="Recommendation description")
+
+    @validator('title')
+    def validate_title(cls, v):
+        if v is not None and not v.strip():
+            raise ValueError('Title cannot be empty')
+        return v.strip() if v else None
+
+
+class AuditRecommendationResponse(BaseModel):
+    """Schema for standalone audit recommendation response"""
+    id: UUID
+    audit_id: UUID
+    title: str
+    description: Optional[str]
+    created_at: datetime
+    created_by: Optional[UUID]
+
+    class Config:
+        from_attributes = True
+
+
+
 class AuditReportResponse(BaseModel):
     """Schema for complete audit report"""
     audit: AuditResponse
     stats: AuditReportStats
     issues: List[IssueResponse]
-    recommendations: List[RecommendationResponse]
+    stats: AuditReportStats
+    issues: List[IssueResponse]
+    schedule_recommendations: List[RecommendationResponse]
+    standalone_recommendations: List[AuditRecommendationResponse] = []
+
     
     # Enriched Content
     template_info: Optional[Dict[str, Any]] = None

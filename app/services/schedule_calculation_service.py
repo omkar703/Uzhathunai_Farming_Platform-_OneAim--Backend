@@ -61,7 +61,36 @@ class ScheduleCalculationService:
                 task_details_template['concentration'],
                 template_parameters
             )
-        
+            
+        # Handle Flat Structure (Dosage + Input Item at root)
+        if 'dosage_amount' in task_details_template and 'input_item_id' in task_details_template:
+            amount = task_details_template.get('dosage_amount', 0)
+            per = task_details_template.get('dosage_per', 'ACRE')
+            calculated_qty = self._calculate_dosage_quantity(
+                amount,
+                per,
+                template_parameters
+            )
+            
+            result_item = {
+                'input_item_id': task_details_template['input_item_id'],
+                'quantity': calculated_qty,
+                'quantity_unit_id': task_details_template.get('dosage_unit'),
+                'dosage': {
+                    'amount': amount,
+                    'per': per,
+                    'unit': task_details_template.get('dosage_unit')
+                }
+            }
+            
+            if 'application_method_id' in task_details_template:
+                result_item['application_method_id'] = task_details_template['application_method_id']
+                
+            if 'input_items' not in task_details:
+                task_details['input_items'] = [result_item]
+            else:
+                task_details['input_items'].append(result_item)
+                
         logger.info(
             "Task quantities calculated",
             extra={

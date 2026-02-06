@@ -172,6 +172,7 @@ class AuditResponsePhoto(Base):
     file_url = Column(String(500), nullable=False)
     file_key = Column(String(500), nullable=True)
     caption = Column(Text, nullable=True)
+    is_flagged_for_report = Column(Boolean, default=False, nullable=False)
     uploaded_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
@@ -254,6 +255,7 @@ class AuditIssue(Base):
     audit_id = Column(UUID(as_uuid=True), ForeignKey("audits.id", ondelete="CASCADE"), nullable=False)
     title = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
+    recommendation = Column(Text, nullable=True)
     severity = Column(SQLEnum(IssueSeverity, name='issue_severity'), nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
@@ -264,3 +266,26 @@ class AuditIssue(Base):
 
     def __repr__(self):
         return f"<AuditIssue(id={self.id}, audit_id={self.audit_id}, severity={self.severity}, title={self.title})>"
+
+
+class AuditRecommendation(Base):
+    """
+    Audit recommendation model - Standalone recommendations not linked to specific issues.
+    
+    Allows auditors to provide general advice or recommendations based on the audit.
+    """
+    __tablename__ = "audit_recommendations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    audit_id = Column(UUID(as_uuid=True), ForeignKey("audits.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    # Relationships
+    audit = relationship("Audit", foreign_keys=[audit_id])
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def __repr__(self):
+        return f"<AuditRecommendation(id={self.id}, audit_id={self.audit_id}, title={self.title})>"

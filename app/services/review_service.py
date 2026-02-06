@@ -297,6 +297,19 @@ class ReviewService:
             AuditReview.audit_response_id == audit_response_id
         ).first()
 
+    def get_review_by_response(self, audit_id: UUID, response_id: UUID) -> Optional[AuditReview]:
+        """
+        Get review for a specific audit response (alias for API compatibility).
+        
+        Args:
+            audit_id: UUID of the audit (unused but kept for API signature compatibility)
+            response_id: UUID of the audit response
+            
+        Returns:
+            Audit review if exists, None otherwise
+        """
+        return self.get_review_by_response_id(response_id)
+
     def get_review_photo_by_photo_id(self, audit_response_photo_id: UUID) -> Optional[AuditReviewPhoto]:
         """
         Get review photo annotation for a specific photo.
@@ -310,3 +323,56 @@ class ReviewService:
         return self.db.query(AuditReviewPhoto).filter(
             AuditReviewPhoto.audit_response_photo_id == audit_response_photo_id
         ).first()
+    
+    def update_review_flag(
+        self,
+        audit_id: UUID,
+        review_id: UUID,
+        is_flagged: bool,
+        user_id: UUID
+    ) -> AuditReview:
+        """
+        Update the flag status of an existing review.
+        
+        Args:
+            audit_id: UUID of the audit (for validation)
+            review_id: UUID of the review to update
+            is_flagged: New flag status
+            user_id: UUID of the user performing the action
+            
+        Returns:
+            Updated audit review
+            
+        Raises:
+            NotFoundError: If review not found
+        """
+        review = self.db.query(AuditReview).filter(
+            AuditReview.id == review_id
+        ).first()
+        
+        if not review:
+            raise NotFoundError(
+                message=f"Review {review_id} not found",
+                error_code="REVIEW_NOT_FOUND",
+                details={"review_id": str(review_id)}
+            )
+        
+        # Update the flag
+        review.is_flagged_for_report = is_flagged
+        review.reviewed_by = user_id
+        review.reviewed_at = datetime.utcnow()
+        
+        self.db.commit()
+        self.db.refresh(review)
+        
+        logger.info(
+            "review_flag_updated",
+            extra={
+                "review_id": str(review_id),
+                "audit_id": str(audit_id),
+                "is_flagged": is_flagged,
+                "user_id": str(user_id)
+            }
+        )
+        
+        return review

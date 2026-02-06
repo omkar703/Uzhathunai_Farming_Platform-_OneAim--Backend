@@ -35,6 +35,23 @@ class Task(Base):
     # Relationships
     translations = relationship("TaskTranslation", back_populates="task", cascade="all, delete-orphan")
 
+    @property
+    def name(self):
+        """
+        Return the display name from translations.
+        Prioritizes English ('en'), then falls back to the first available translation.
+        """
+        if not self.translations:
+            return self.code
+        
+        # Try to find English translation
+        for t in self.translations:
+            if t.language_code == 'en':
+                return t.name
+        
+        # Fallback to first available translation
+        return self.translations[0].name
+
 
 class TaskTranslation(Base):
     """

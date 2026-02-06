@@ -8,6 +8,7 @@ and farming organization derivation from crops.
 
 from typing import List, Tuple, Optional, Dict, Any
 from uuid import UUID
+from decimal import Decimal
 from datetime import datetime, date
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func, extract
@@ -15,7 +16,7 @@ from sqlalchemy.orm import joinedload
 
 from app.core.logging import get_logger
 from app.core.exceptions import NotFoundError, ValidationError, PermissionError, ConflictError
-from app.models.audit import Audit, AuditParameterInstance, AuditIssue, AuditResponse
+from app.models.audit import Audit, AuditParameterInstance, AuditIssue, AuditResponse, AuditRecommendation, AuditReview, AuditResponsePhoto
 from app.models.schedule import ScheduleChangeLog
 from app.models.template import Template, TemplateSection, TemplateParameter
 from app.models.crop import Crop
@@ -698,12 +699,82 @@ class AuditService:
             issues_stats[severity] = issues_stats.get(severity, 0) + 1
             
         # Get recommendations (ScheduleChangeLog linked to this audit)
-        recommendations = self.db.query(ScheduleChangeLog).filter(
+        schedule_recommendations = self.db.query(ScheduleChangeLog).filter(
             and_(
                 ScheduleChangeLog.trigger_type == ScheduleChangeTrigger.AUDIT,
                 ScheduleChangeLog.trigger_reference_id == audit_id
             )
         ).all()
+
+        # Get standalone recommendations
+        standalone_recommendations = self.db.query(AuditRecommendation).filter(
+            AuditRecommendation.audit_id == audit_id
+        ).all()
+
+        # Get flagged reviews (responses)
+        flagged_reviews = self.db.query(AuditReview).options(
+            joinedload(AuditReview.audit_response)
+        ).filter(
+            AuditReview.is_flagged_for_report == True,
+            AuditReview.audit_response.has(AuditResponse.audit_id == audit_id)
+        ).all()
+
+        flagged_responses_data = []
+        for review in flagged_reviews:
+            resp = review.audit_response
+            param_instance = self.db.query(AuditParameterInstance).filter(
+                AuditParameterInstance.id == resp.audit_parameter_instance_id
+            ).first()
+            
+            param_name = "Unknown Parameter"
+            param_type = "TEXT"
+            options = []
+            if param_instance and param_instance.parameter_snapshot:
+                snapshot = param_instance.parameter_snapshot
+                param_type = snapshot.get("parameter_type", "TEXT")
+                options = snapshot.get("options", [])
+                translations = snapshot.get('translations', {})
+                if 'en' in translations:
+                    param_name = translations['en'].get('name')
+                elif translations:
+                    first = next(iter(translations))
+                    param_name = translations[first].get('name')
+
+            def format_val(r_obj, p_type, opts):
+                if not r_obj: return "N/A"
+                if p_type == "TEXT": return r_obj.response_text or "N/A"
+                if p_type == "NUMERIC": return str(r_obj.response_numeric) if r_obj.response_numeric is not None else "N/A"
+                if p_type == "DATE": return str(r_obj.response_date) if r_obj.response_date is not None else "N/A"
+                if p_type in ["SINGLE_SELECT", "MULTI_SELECT"] and r_obj.response_options:
+                    labels = []
+                    for opt_id in r_obj.response_options:
+                        opt_def = next((o for o in opts if o.get("option_id") == str(opt_id)), None)
+                        if opt_def:
+                            o_trans = opt_def.get("translations", {})
+                            labels.append(o_trans.get("en") or next(iter(o_trans.values())) if o_trans else str(opt_id))
+                    return ", ".join(labels) if labels else "N/A"
+                return "N/A"
+
+            flagged_responses_data.append({
+                "parameter_name": param_name,
+                "original_response": format_val(resp, param_type, options),
+                "reviewed_response": format_val(review, param_type, options),
+                "is_flagged": True
+            })
+
+        # Get flagged photos
+        flagged_photos = self.db.query(AuditResponsePhoto).filter(
+            AuditResponsePhoto.audit_id == audit_id,
+            AuditResponsePhoto.is_flagged_for_report == True
+        ).all()
+        
+        flagged_photos_data = []
+        for photo in flagged_photos:
+            flagged_photos_data.append({
+                "file_url": photo.file_url,
+                "caption": photo.caption,
+                "response_id": str(photo.audit_response_id) if photo.audit_response_id else None
+            })
         
         return {
             "audit": audit,
@@ -716,5 +787,8 @@ class AuditService:
                 "issues_by_severity": issues_stats
             },
             "issues": issues,
-            "recommendations": recommendations
+            "schedule_recommendations": schedule_recommendations,
+            "standalone_recommendations": standalone_recommendations,
+            "flagged_responses": flagged_responses_data,
+            "flagged_photos": flagged_photos_data
         }

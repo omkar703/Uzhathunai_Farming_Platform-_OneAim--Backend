@@ -47,7 +47,10 @@ from app.schemas.audit import (
     RecommendationListResponse,
     RecommendationListResponse,
     AuditAssignRequest,
-    AuditReportResponse
+    AuditReportResponse,
+    AuditRecommendationCreate,
+    AuditRecommendationUpdate,
+    AuditRecommendationResponse
 )
 from app.services.audit_service import AuditService
 from app.services.response_service import ResponseService
@@ -565,6 +568,39 @@ async def save_audit_responses(
         # Convert to Pydantic models manually to ensure valid data for service
         pydantic_responses = []
         for item in responses_data:
+            # Hotfix: Client sending photos in response_date
+            if "response_date" in item and isinstance(item["response_date"], list):
+                print(f"DEBUG: [SimpleSave] Found list in response_date (len={len(item['response_date'])}), moving to evidence_urls", flush=True)
+                if not item.get("evidence_urls"):
+                    item["evidence_urls"] = item["response_date"]
+                else:
+                    item["evidence_urls"].extend(item["response_date"])
+                item["response_date"] = None
+            
+            # Hotfix: Client sending photos in response_options (for Select types)
+            # Check if non-empty list and first item is string with '/' (path) -> likely photos
+            if ("response_options" in item and 
+                isinstance(item["response_options"], list) and 
+                item["response_options"] and 
+                isinstance(item["response_options"][0], str) and 
+                "/" in item["response_options"][0]):
+                
+                print(f"DEBUG: [SimpleSave] Found paths in response_options (len={len(item['response_options'])}), moving to evidence_urls", flush=True)
+                if not item.get("evidence_urls"):
+                    item["evidence_urls"] = item["response_options"]
+                else:
+                    item["evidence_urls"].extend(item["response_options"])
+                item["response_options"] = None
+
+            # Hotfix: Client sending photos in response_numeric
+            if "response_numeric" in item and isinstance(item["response_numeric"], list):
+                print(f"DEBUG: [SimpleSave] Found list in response_numeric (len={len(item['response_numeric'])}), moving to evidence_urls", flush=True)
+                if not item.get("evidence_urls"):
+                    item["evidence_urls"] = item["response_numeric"]
+                else:
+                    item["evidence_urls"].extend(item["response_numeric"])
+                item["response_numeric"] = None
+
             pydantic_responses.append(ResponseSubmit(**item))
 
         # 4. Service Call (in threadpool)
@@ -755,6 +791,50 @@ async def upload_evidence(
 
 
 @router.get(
+    "/audits/{audit_id}/evidence",
+    response_model=BaseResponse[PhotoListResponse],
+    summary="Get evidence photos",
+    description="Get all evidence photos for an audit (including those not linked to responses)"
+)
+def get_audit_evidence(
+    audit_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all evidence photos for an audit.
+    
+    Returns all photos associated with the audit, regardless of whether
+    they are linked to a specific response or strictly 'evidence'.
+    
+    **Requirements: 9.1**
+    """
+    logger.info(
+        "Getting audit evidence via API",
+        extra={
+            "user_id": str(current_user.id),
+            "audit_id": str(audit_id)
+        }
+    )
+
+    from app.models.audit import AuditResponsePhoto
+    
+    # Query all photos for this audit
+    photos = db.query(AuditResponsePhoto).filter(
+        AuditResponsePhoto.audit_id == audit_id
+    ).order_by(AuditResponsePhoto.uploaded_at.desc()).all()
+
+    return {
+        "success": True,
+        "message": "Evidence retrieved successfully",
+        "data": {
+            "items": photos,
+            "total": len(photos)
+        }
+    }
+
+
+@router.get(
     "/audits/{audit_id}/responses/{response_id}/photos",
     response_model=BaseResponse[PhotoListResponse],
     summary="Get photos for audit response",
@@ -798,7 +878,7 @@ def get_photos(
 @router.delete(
     "/audits/{audit_id}/responses/{response_id}/photos/{photo_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete photo",
+    summary="Delete audit photo",
     description="Delete a photo from an audit response"
 )
 def delete_photo(
@@ -811,12 +891,7 @@ def delete_photo(
     """
     Delete a photo from an audit response.
     
-    This endpoint:
-    - Validates photo exists
-    - Deletes from storage
-    - Deletes from database
-    
-    **Requirements: 9.1, 18.3**
+    **Requirements: 9.1**
     """
     logger.info(
         "Deleting photo via API",
@@ -829,14 +904,170 @@ def delete_photo(
     )
 
     service = PhotoService(db)
-    service.delete_photo(
-        audit_id=audit_id,
-        response_id=response_id,
-        photo_id=photo_id,
-        user_id=current_user.id
-    )
+    service.delete_photo(audit_id, response_id, photo_id, current_user.id)
 
     return None
+
+
+@router.put(
+    "/audits/{audit_id}/evidence/{evidence_id}/flag",
+    response_model=BaseResponse[dict],
+    summary="Toggle flag on evidence photo",
+    description="Toggle the flagged status of an evidence photo for report generation"
+)
+def toggle_evidence_flag(
+    audit_id: UUID,
+    evidence_id: UUID,
+    data: FlagRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Toggle flag for an evidence photo.
+    
+    This is used during curation to select photos for the final report.
+    """
+    logger.info(
+        "Toggling evidence flag via API",
+        extra={
+            "user_id": str(current_user.id),
+            "audit_id": str(audit_id),
+            "evidence_id": str(evidence_id),
+            "is_flagged": data.is_flagged
+        }
+    )
+
+    service = PhotoService(db)
+    photo = service.toggle_photo_flag(audit_id, evidence_id, data.is_flagged, current_user.id)
+
+    return {
+        "success": True,
+        "message": "Flag updated successfully",
+        "data": {
+            "id": str(photo.id),
+            "is_flagged": photo.is_flagged_for_report
+        }
+    }
+
+
+# Report Endpoints
+
+@router.get(
+    "/audits/{audit_id}/report",
+    response_model=BaseResponse[AuditReportResponse],
+    summary="Get farmer audit report",
+    description="Get the curated audit report for farmers"
+)
+def get_farmer_report(
+    audit_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the curated audit report for farmers.
+    
+    Includes:
+    - Audit Summary
+    - Issues (with stats)
+    - Recommendations (standalone & schedule)
+    - Flagged Items (Responses & Evidence)
+    """
+    logger.info(
+        "Getting farmer report via API",
+        extra={
+            "user_id": str(current_user.id),
+            "audit_id": str(audit_id)
+        }
+    )
+
+    service = AuditService(db)
+    report = service.get_audit_report(audit_id)
+
+    return {
+        "success": True,
+        "message": "Report retrieved successfully",
+        "data": report
+    }
+
+
+# Standalone Recommendations Endpoints
+
+@router.post(
+    "/audits/{audit_id}/recommendations",
+    response_model=BaseResponse[AuditRecommendationResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Create standalone recommendation",
+    description="Create a recommendation not linked to specific schedule tasks"
+)
+def create_audit_recommendation(
+    audit_id: UUID,
+    data: AuditRecommendationCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a standalone recommendation.
+    """
+    logger.info(
+        "Creating recommendation via API",
+        extra={"audit_id": str(audit_id), "user_id": str(current_user.id)}
+    )
+    
+    from app.models.audit import AuditRecommendation
+    
+    recommendation = AuditRecommendation(
+        audit_id=audit_id,
+        title=data.title,
+        description=data.description,
+        created_by=current_user.id
+    )
+    
+    print(f"DEBUG: [StandaloneRec] Committing recommendation for audit {audit_id}", flush=True)
+    db.add(recommendation)
+    db.commit()
+    print(f"DEBUG: [StandaloneRec] Committed recommendation for audit {audit_id}", flush=True)
+    db.refresh(recommendation)
+    
+    return {
+        "success": True,
+        "message": "Recommendation created successfully",
+        "data": recommendation
+    }
+
+@router.delete(
+    "/audits/{audit_id}/recommendations/{recommendation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete standalone recommendation",
+    description="Delete a standalone recommendation"
+)
+def delete_audit_recommendation(
+    audit_id: UUID,
+    recommendation_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a standalone recommendation.
+    """
+    from app.models.audit import AuditRecommendation
+    
+    rec = db.query(AuditRecommendation).filter(
+        AuditRecommendation.id == recommendation_id,
+        AuditRecommendation.audit_id == audit_id
+    ).first()
+    
+    if not rec:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Recommendation not found"
+        )
+        
+    db.delete(rec)
+    db.commit()
+    
+    return None
+
+
 
 
 @router.post(
@@ -1483,13 +1714,13 @@ def delete_issue(
 # ============================================
 
 @router.post(
-    "/audits/{audit_id}/recommendations",
+    "/audits/{audit_id}/schedule-recommendations",
     response_model=BaseResponse[RecommendationResponse],
     status_code=status.HTTP_201_CREATED,
-    summary="Create audit recommendation",
-    description="Create a recommendation for schedule changes based on audit findings"
+    summary="Create schedule recommendation",
+    description="Create a recommendation for schedule changes (ADD/MODIFY/DELETE tasks) based on audit findings"
 )
-def create_recommendation(
+def create_schedule_recommendation(
     audit_id: UUID,
     data: RecommendationCreate,
     current_user: User = Depends(get_current_active_user),
@@ -1519,6 +1750,7 @@ def create_recommendation(
         user_id=current_user.id
     )
     
+    print(f"DEBUG: [ScheduleRec] Recommendation object created, about to return", flush=True)
     return {
         "success": True,
         "message": "Recommendation created successfully",
@@ -1527,12 +1759,12 @@ def create_recommendation(
 
 
 @router.get(
-    "/audits/{audit_id}/recommendations",
+    "/audits/{audit_id}/schedule-recommendations",
     response_model=BaseResponse[RecommendationListResponse],
-    summary="Get audit recommendations",
-    description="Get all recommendations for a specific audit with pagination"
+    summary="Get audit schedule recommendations",
+    description="Get all schedule linked recommendations for a specific audit with pagination"
 )
-def get_audit_recommendations(
+def get_audit_schedule_recommendations(
     audit_id: UUID,
     is_applied: Optional[bool] = Query(None, description="Filter by applied status"),
     page: int = Query(1, ge=1, description="Page number"),
@@ -1571,12 +1803,12 @@ def get_audit_recommendations(
 
 
 @router.put(
-    "/audits/{audit_id}/recommendations/{recommendation_id}",
+    "/audits/{audit_id}/schedule-recommendations/{recommendation_id}",
     response_model=BaseResponse[RecommendationResponse],
-    summary="Update recommendation",
-    description="Update a recommendation before it's applied"
+    summary="Update schedule recommendation",
+    description="Update a schedule recommendation before it's applied"
 )
-def update_recommendation(
+def update_schedule_recommendation(
     audit_id: UUID,
     recommendation_id: UUID,
     data: RecommendationUpdate,
@@ -1608,12 +1840,12 @@ def update_recommendation(
 
 
 @router.delete(
-    "/audits/{audit_id}/recommendations/{recommendation_id}",
+    "/audits/{audit_id}/schedule-recommendations/{recommendation_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete recommendation",
-    description="Delete a recommendation before it's applied"
+    summary="Delete schedule recommendation",
+    description="Delete a schedule recommendation before it's applied"
 )
-def delete_recommendation(
+def delete_schedule_recommendation(
     audit_id: UUID,
     recommendation_id: UUID,
     current_user: User = Depends(get_current_active_user),

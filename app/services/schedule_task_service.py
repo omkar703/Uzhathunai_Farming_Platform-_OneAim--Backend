@@ -25,9 +25,9 @@ class ScheduleTaskService:
     
     # Valid status transitions
     VALID_TRANSITIONS = {
-        TaskStatus.NOT_STARTED: [TaskStatus.IN_PROGRESS, TaskStatus.CANCELLED, TaskStatus.ON_HOLD],
+        TaskStatus.NOT_STARTED: [TaskStatus.IN_PROGRESS, TaskStatus.CANCELLED, TaskStatus.ON_HOLD, TaskStatus.MISSED, TaskStatus.COMPLETED],
         TaskStatus.IN_PROGRESS: [TaskStatus.COMPLETED, TaskStatus.MISSED, TaskStatus.CANCELLED, TaskStatus.ON_HOLD],
-        TaskStatus.ON_HOLD: [TaskStatus.NOT_STARTED, TaskStatus.IN_PROGRESS, TaskStatus.CANCELLED],
+        TaskStatus.ON_HOLD: [TaskStatus.NOT_STARTED, TaskStatus.IN_PROGRESS, TaskStatus.CANCELLED, TaskStatus.MISSED, TaskStatus.COMPLETED],
         TaskStatus.COMPLETED: [],  # Terminal state
         TaskStatus.MISSED: [],  # Terminal state
         TaskStatus.CANCELLED: []  # Terminal state
@@ -409,7 +409,7 @@ class ScheduleTaskService:
             )
         
         # Farming organization users can manage their own tasks (Requirement 9.1)
-        if farm.organization_id == user.current_organization_id:
+        if str(farm.organization_id) == str(user.current_organization_id):
             return
         
         # FSP users need active work order with write permission (Requirement 9.2)

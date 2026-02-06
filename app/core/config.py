@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     # File Upload Configuration
     MAX_UPLOAD_SIZE: int = 10485760  # 10MB
     UPLOAD_DIR: str = "uploads/"
+
+    # AWS Configuration
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_REGION_NAME: str = "us-east-1"
+    AWS_S3_BUCKET: str = "farm-audit-evidence"
     
     # Logging
     LOG_LEVEL: str = "INFO"

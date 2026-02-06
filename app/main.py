@@ -43,12 +43,16 @@ app = FastAPI(
     default_response_class=JSONResponse
 )
 
-@app.middleware("http")
-async def debug_logging_middleware(request: Request, call_next):
-    print(f"DEBUG: Middleware received request: {request.method} {request.url.path}", flush=True)
-    response = await call_next(request)
-    print(f"DEBUG: Middleware sending response: {response.status_code}", flush=True)
-    return response
+# Mount static files (uploads)
+from fastapi.staticfiles import StaticFiles
+import os
+
+upload_dir = settings.UPLOAD_DIR
+# Ensure directory exists just in case
+if not os.path.exists(upload_dir):
+    os.makedirs(upload_dir, exist_ok=True)
+
+app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
 
 # Configure CORS
 app.add_middleware(
@@ -80,10 +84,12 @@ async def logging_middleware(request: Request, call_next):
     
     start_time = time.time()
     
-    print(f"DEBUGGING_HANG: Middleware {request_id} calling call_next", flush=True)
+    # Remove blocking debug print
+
     try:
         response = await call_next(request)
-        print(f"DEBUGGING_HANG: Middleware {request_id} returned from call_next", flush=True)
+        # Remove blocking debug print
+
         process_time = (time.time() - start_time) * 1000
         
         # Log request completion

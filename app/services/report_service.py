@@ -389,6 +389,7 @@ class ReportService:
             AuditResponse.audit_id == audit.id
         ).all()
 
+        print(f"DEBUG: [FlaggedPhotos] Found {len(photos)} total photos for audit {audit.id}", flush=True)
         
         for photo in photos:
             # Check if photo has a review that is flagged
@@ -397,7 +398,10 @@ class ReportService:
                 AuditReviewPhoto.is_flagged_for_report == True
             ).first()
             
+            print(f"DEBUG: [FlaggedPhotos] Photo {photo.id}: review_photo={'Found' if review_photo else 'Not found'}", flush=True)
+            
             if review_photo:
+                print(f"DEBUG: [FlaggedPhotos] Adding flagged photo {photo.id} to report", flush=True)
                 flagged_photos.append({
                     "id": photo.id,
                     "audit_response_id": photo.audit_response_id,
@@ -408,6 +412,7 @@ class ReportService:
                     "uploaded_by": photo.uploaded_by
                 })
         
+        print(f"DEBUG: [FlaggedPhotos] Returning {len(flagged_photos)} flagged photos", flush=True)
         return flagged_photos
 
     def _get_issues_by_severity(self, audit: Audit) -> Dict[str, List[Dict[str, Any]]]:

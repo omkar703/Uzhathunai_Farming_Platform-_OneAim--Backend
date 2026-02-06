@@ -4,7 +4,9 @@ Schedule Service for Uzhathunai v2.0.
 Handles schedule creation from templates and from scratch with access control.
 """
 from typing import List, Tuple, Optional, Dict, Any
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+import uuid
+import logging
 from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
@@ -14,6 +16,9 @@ from app.models.schedule_template import ScheduleTemplate, ScheduleTemplateTask
 from app.models.crop import Crop
 from app.models.user import User
 from app.models.enums import TaskStatus, WorkOrderStatus
+from app.models.input_item import InputItem
+from app.models.reference_data import ReferenceData
+from app.schemas.schedule import ScheduleWithTasksResponse
 from app.core.logging import get_logger
 from app.core.exceptions import NotFoundError, ValidationError, PermissionError
 from app.services.schedule_calculation_service import ScheduleCalculationService
@@ -148,6 +153,7 @@ class ScheduleService:
                 task_id=template_task.task_id,
                 due_date=due_date,
                 status=TaskStatus.NOT_STARTED,
+                task_name=template_task.task_name,
                 task_details=task_details,
                 notes=template_task.notes,
                 created_by=user.id,
@@ -274,13 +280,13 @@ class ScheduleService:
             query = query.filter(Schedule.crop_id == crop_id)
         
         # Apply access control
-        # if user.is_system_user():
-        #     # System users can see all schedules
-        #     pass
-        # else:
-        # Get accessible crop IDs for user
-        accessible_crop_ids = self._get_accessible_crop_ids(user)
-        query = query.filter(Schedule.crop_id.in_(accessible_crop_ids))
+        if user.is_system_user():
+            # System users can see all schedules
+            pass
+        else:
+            # Get accessible crop IDs for user
+            accessible_crop_ids = self._get_accessible_crop_ids(user)
+            query = query.filter(Schedule.crop_id.in_(accessible_crop_ids))
         
         # Get total count
         total = query.count()
@@ -345,8 +351,12 @@ class ScheduleService:
         
         return schedules, total
 
-    def get_schedule_with_details(self, user: User, schedule_id: UUID) -> Schedule:
-        """Get single schedule with all details populated."""
+    def get_schedule_with_details(self, user: User, schedule_id: UUID) -> ScheduleWithTasksResponse:
+        """
+        Get single schedule with all details populated.
+        
+        Populates extra fields: input_item_name, application_method_name, total_quantity_required, dosage, area
+        """
         schedule = self.db.query(Schedule).filter(
             Schedule.id == schedule_id,
             Schedule.is_active == True
@@ -358,8 +368,7 @@ class ScheduleService:
                 error_code="SCHEDULE_NOT_FOUND"
             )
 
-        # Populate computed fields (reuse logic from get_schedules or model properties)
-        # Note: Model properties (total_tasks, completed_tasks, start_date) are automatic.
+        # Populate computed fields
         schedule.status = 'ACTIVE' if schedule.is_active else 'CANCELLED'
         
         try:
@@ -387,7 +396,272 @@ class ScheduleService:
         except Exception as e:
             logger.warning(f"Error populating FSP info for schedule {schedule.id}: {e}")
 
-        return schedule
+        # Convert to Pydantic model
+        response = ScheduleWithTasksResponse.from_orm(schedule)
+        
+        # --- 1. Populate Area Details ---
+        area_unit_id = None
+        if schedule.template_parameters and isinstance(schedule.template_parameters, dict):
+            params = schedule.template_parameters
+            
+            # Extract Area
+            # Priority: area (common) > total_acres (legacy) > total_plants (legacy/count)
+            if 'area' in params:
+                 response.area = float(params['area'])
+                 area_unit_id = params.get('area_unit_id')
+            elif 'total_acres' in params:
+                 response.area = float(params['total_acres'])
+                 # Implicitly acre? Should check if unit ID exists
+                 area_unit_id = params.get('area_unit_id')
+            elif 'total_plants' in params:
+                 response.area = float(params['total_plants'])
+                 # Implicitly count?
+                 
+            # Fallback for unit ID if not in params but we found area
+            if not area_unit_id and response.area:
+                 # Try to infer or leave null. We need to fetch unit name later.
+                 pass
+
+        # --- 2. Collect IDs for Bulk Fetch ---
+        input_item_ids = set()
+        method_ids = set()
+        unit_ids = set()
+        
+        if area_unit_id:
+            unit_ids.add(area_unit_id)
+            
+        task_data_map = {} # task_id -> {input_item_id, method_id, quantity, dosage_info}
+        
+        # CRITICAL FIX: If schedule has a template, fetch template tasks for fallback
+        template_task_map = {}
+        if schedule.template_id:
+            from app.models.schedule_template import ScheduleTemplateTask
+            template_tasks = self.db.query(ScheduleTemplateTask).filter(
+                ScheduleTemplateTask.schedule_template_id == schedule.template_id
+            ).all()
+            
+            for tt in template_tasks:
+                template_task_map[str(tt.task_id)] = tt
+        
+        for task in response.tasks:
+            details = task.task_details or {}
+            
+            # CRITICAL FIX: If task_details is empty, try to get from template
+            if not details and str(task.task_id) in template_task_map:
+                template_task = template_task_map[str(task.task_id)]
+                template_details = template_task.task_details_template or {}
+                
+                # Also fetch task_name from template if missing from schedule_task
+                if not task.task_name:
+                     task.task_name = template_task.task_name
+                
+                # Calculate the details using the same service used during creation
+                try:
+                    details = self.calculation_service.calculate_task_quantities(
+                        template_details,
+                        schedule.template_parameters or {}
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to calculate task quantities from template: {e}")
+                    details = template_details  # Use template as-is if calculation fails
+            
+            # Final fallback for task_name if still null (for old schedules or missing template name)
+            if not task.task_name:
+                # Find the matching ORM task to get its display_task_name (which handles fallback to task type name)
+                orm_task = next((t for t in schedule.tasks if t.id == task.id), None)
+                if orm_task:
+                    task.task_name = orm_task.display_task_name
+                else:
+                    task.task_name = "Generic Task"
+            
+            # Data structure to hold extraction results
+            extracted = {
+                 'input_item_id': None,
+                 'method_id': None,
+                 'quantity': None,
+                 'dosage_raw': None
+            }
+
+            # Check input_items
+            if 'input_items' in details and isinstance(details['input_items'], list) and details['input_items']:
+                item = details['input_items'][0]
+                extracted['input_item_id'] = item.get('input_item_id')
+                extracted['quantity'] = item.get('quantity')
+                extracted['method_id'] = item.get('application_method_id')
+                extracted['dosage_raw'] = item.get('dosage')
+                
+                if item.get('quantity_unit_id'):
+                     unit_ids.add(item.get('quantity_unit_id'))
+                     
+            # Check concentration
+            elif 'concentration' in details and isinstance(details['concentration'], dict):
+                conc = details['concentration']
+                if 'ingredients' in conc and isinstance(conc['ingredients'], list) and conc['ingredients']:
+                    ing = conc['ingredients'][0]
+                    extracted['input_item_id'] = ing.get('input_item_id')
+                    extracted['quantity'] = ing.get('total_quantity')
+                    # Concentration doesn't usually have method_id in ingredient, use task root if available
+                    if 'application_method_id' in details:
+                         extracted['method_id'] = details['application_method_id']
+                    
+                    if ing.get('quantity_unit_id'):
+                         unit_ids.add(ing.get('quantity_unit_id'))
+            
+            # Collect IDs
+            if extracted['input_item_id']: input_item_ids.add(extracted['input_item_id'])
+            if extracted['method_id']: method_ids.add(extracted['method_id'])
+            
+            task_data_map[task.id] = extracted
+        
+        # --- 3. Bulk Fetch Names & Units ---
+        input_item_names = {}
+        if input_item_ids:
+            items = self.db.query(InputItem).filter(InputItem.id.in_(input_item_ids)).all()
+            for item in items:
+                name = item.code # Default
+                if item.translations:
+                    # Prefer English, fallback to first
+                    for t in item.translations:
+                        if t.language_code == 'en':
+                            name = t.name
+                            break
+                    else:
+                        name = item.translations[0].name
+                input_item_names[str(item.id)] = name
+                
+        method_names = {}
+        if method_ids:
+            methods = self.db.query(ReferenceData).filter(ReferenceData.id.in_(method_ids)).all()
+            for method in methods:
+                 method_names[str(method.id)] = method.display_name
+        
+        unit_map = {} # id -> symbol (or code)
+        if unit_ids:
+             from app.models.measurement_unit import MeasurementUnit
+             
+             # Filter out non-UUID values to avoid database errors
+             valid_unit_uuids = []
+             for uid in unit_ids:
+                  try:
+                       if uid:
+                            uuid.UUID(str(uid))
+                            valid_unit_uuids.append(uid)
+                  except ValueError:
+                       # Likely a code like 'kg', 'L', etc.
+                       pass
+             
+             if valid_unit_uuids:
+                 units = self.db.query(MeasurementUnit).filter(MeasurementUnit.id.in_(valid_unit_uuids)).all()
+                 for unit in units:
+                      # Prefer symbol, fallback to code
+                      unit_map[str(unit.id)] = unit.symbol or unit.code
+
+        # --- 4. Populate Response ---
+        
+        # Populate Area Unit
+        if area_unit_id and str(area_unit_id) in unit_map:
+             response.area_unit = unit_map[str(area_unit_id)]
+        
+        for task in response.tasks:
+            if task.id in task_data_map:
+                data = task_data_map[task.id]
+                
+                # A. Input Item Name
+                if data['input_item_id'] and str(data['input_item_id']) in input_item_names:
+                    task.input_item_name = input_item_names[str(data['input_item_id'])]
+                else:
+                    # Fallback validation: User requested no nulls. 
+                    if data['input_item_id']:
+                         task.input_item_name = "Unknown Item" 
+                    elif task.task_name:
+                         # Use task name if available as a proxy for what's happening
+                         task.input_item_name = task.task_name
+                    else:
+                         task.input_item_name = "Generic Task"
+
+                # B. Task Name Fallback (already handled above, but double check)
+                if not task.task_name or task.task_name in ["Generic Task", "Unknown Task"]:
+                     if task.input_item_name and task.input_item_name not in ["Generic Task", "Unknown Item"]:
+                          task.task_name = task.input_item_name
+                     elif not task.task_name or task.task_name == "Generic Task":
+                          # Fallback to model's display_task_name if possible
+                          orm_task = next((t for t in schedule.tasks if t.id == task.id), None)
+                          task.task_name = orm_task.display_task_name if orm_task else "Generic Task"
+                          
+                # Ultimate fallback for task_name if still not set
+                if not task.task_name:
+                    task.task_name = "Generic Task"
+
+                # B. Application Method Name
+                if data['method_id'] and str(data['method_id']) in method_names:
+                    task.application_method_name = method_names[str(data['method_id'])]
+                elif task.task_details and 'application_method_name' in task.task_details:
+                     task.application_method_name = task.task_details['application_method_name']
+                else:
+                     # Strict validation fallback
+                     task.application_method_name = "Manual Application" # Safe default
+                
+                # C. Dosage & Total Quantity Calculation
+                # Structure: { amount: float, unit: str, per: str }
+                
+                dosage_raw = data.get('dosage_raw')
+                dosage_obj = None
+                
+                # If dosage not in details, try to construct it from quantity if we have area?
+                # Or extracting it is primary.
+                if dosage_raw and isinstance(dosage_raw, dict):
+                     amount = dosage_raw.get('amount') or dosage_raw.get('quantity')
+                     unit_id = dosage_raw.get('unit_id') or dosage_raw.get('unit')
+                     
+                     if amount is not None:
+                           # Try to get unit string: either from unit_map or use the raw ID/Code if it's already a string
+                           unit_str = "Units"
+                           if unit_id:
+                                if str(unit_id) in unit_map:
+                                    unit_str = unit_map[str(unit_id)]
+                                elif isinstance(unit_id, str) and len(unit_id) < 10: # Likely a code like 'Kg' or 'L'
+                                    unit_str = unit_id
+                           
+                           per_str = "Application" 
+                           basis = None
+                           if schedule.template_parameters:
+                                basis = schedule.template_parameters.get('calculation_basis')
+                           
+                           # Fallback per_str from basis if not in dosage_raw
+                           per_raw = dosage_raw.get('per')
+                           if per_raw:
+                                per_str = str(per_raw).capitalize()
+                           elif basis == 'per_acre':
+                                per_str = "Acre"
+                           elif basis == 'per_plant':
+                                per_str = "Plant"
+                                
+                           dosage_obj = {
+                                "amount": float(amount),
+                                "unit": unit_str,
+                                "per": per_str
+                           }
+                           task.dosage = dosage_obj
+
+                # Calculate Total Quantity if missing but we have Dosage & Area
+                if task.total_quantity_required is None and data['quantity'] is not None:
+                     try:
+                        task.total_quantity_required = float(data['quantity'])
+                     except (ValueError, TypeError):
+                        pass
+
+                if task.total_quantity_required is None and dosage_obj and response.area:
+                     # Calculate: Dosage * Area
+                     try:
+                          task.total_quantity_required = float(dosage_obj['amount']) * float(response.area)
+                     except Exception:
+                          pass
+        
+        # CRITICAL FIX: Sync items with tasks because from_orm creates separate copies
+        # The frontend uses 'items', so it needs the updated task objects
+        response.items = response.tasks
+        
+        return response
     
     def _validate_schedule_creation_access(self, user: User, crop_id: UUID) -> None:
         """
@@ -396,8 +670,8 @@ class ScheduleService:
         Validates: Requirements 6.1, 6.2, 6.4, 7.1, 7.2, 7.3
         """
         # System users can create schedules for any crop (Requirement 6.3, 7.3)
-        # if user.is_system_user():
-        #     return
+        if user.is_system_user():
+            return
         
         # Check if user is FSP with consultancy service
         if self._is_fsp_consultancy_user(user):
@@ -630,6 +904,7 @@ class ScheduleService:
                 task_id=source_task.task_id,
                 due_date=new_due_date,
                 status=TaskStatus.NOT_STARTED,  # Reset status (Requirement 8.5)
+                task_name=source_task.task_name, # Copy custom/overridden task name
                 task_details=source_task.task_details,  # Copy task details (Requirement 8.9)
                 notes=source_task.notes,
                 created_by=user.id,

@@ -257,6 +257,8 @@ class ScheduleTaskResponse(BaseModel):
     task_name: Optional[str] = None
     input_item_name: Optional[str] = None
     application_method_name: Optional[str] = None
+    total_quantity_required: Optional[float] = None
+    dosage: Optional[Dict[str, Any]] = None
     
     class Config:
         from_attributes = True
@@ -284,6 +286,8 @@ class ScheduleResponse(BaseModel):
     is_fsp_created: bool = False
     total_tasks: int = 0
     completed_tasks: int = 0
+    area: Optional[float] = None
+    area_unit: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -329,6 +333,8 @@ class ScheduleWithTasksResponse(BaseModel):
     total_tasks: int = 0
     completed_tasks: int = 0
     items: Optional[List[ScheduleTaskResponse]] = None
+    area: Optional[float] = None
+    area_unit: Optional[str] = None
     
     class Config:
         from_attributes = True

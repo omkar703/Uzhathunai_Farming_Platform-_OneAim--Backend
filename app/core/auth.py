@@ -2,7 +2,7 @@
 Authentication dependencies for Uzhathunai v2.0.
 """
 from typing import Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,7 @@ security = HTTPBearer()
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
@@ -28,6 +29,7 @@ def get_current_user(
     Get current authenticated user from JWT token.
     
     Args:
+        request: FastAPI Request object (for caching)
         credentials: HTTP Authorization credentials
         db: Database session
     
@@ -37,9 +39,14 @@ def get_current_user(
     Raises:
         HTTPException: If token is invalid or user not found
     """
+    # Check request state for cached user to avoid DB hit
+    if hasattr(request.state, "user") and request.state.user:
+        # print(f"DEBUG: Using cached user {request.state.user.id}", flush=True)
+        return request.state.user
+
     # Extract token from credentials
     token = credentials.credentials
-    print(f"DEBUG: get_current_user entering with token ending ...{token[- 10:] if token else 'None'}", flush=True)
+    # print(f"DEBUG: get_current_user entering with token ending ...{token[- 10:] if token else 'None'}", flush=True)
 
     # Verify token
     payload = verify_token(token, token_type="access")
@@ -58,9 +65,9 @@ def get_current_user(
         )
     
     # Query user from database
-    print(f"DEBUG: get_current_user querying DB for {user_id}", flush=True)
+    # print(f"DEBUG: get_current_user querying DB for {user_id}", flush=True)
     user = db.query(User).filter(User.id == user_id).first()
-    print(f"DEBUG: get_current_user found user? {user is not None}", flush=True)
+    # print(f"DEBUG: get_current_user found user? {user is not None}", flush=True)
     if not user:
         raise unauthorized_exception(
             message="User not found",
@@ -75,6 +82,19 @@ def get_current_user(
     else:
         # No organization context (freelancer or old token)
         user.current_organization_id = None
+    
+    # Check if system user (SuperAdmin, Billing Admin, Support Agent)
+    # This matches the logic in ScheduleTemplateService
+    system_roles = ['SUPER_ADMIN', 'BILLING_ADMIN', 'SUPPORT_AGENT']
+    has_system_role = db.query(OrgMemberRole).join(Role).filter(
+        OrgMemberRole.user_id == user.id,
+        Role.code.in_(system_roles)
+    ).first() is not None
+    
+    user._is_system_user = has_system_role
+    
+    # Cache user in request state
+    request.state.user = user
     
     return user
 

@@ -35,6 +35,7 @@ class ScheduleTemplateTranslationResponse(ScheduleTemplateTranslationBase):
 class ScheduleTemplateTaskBase(BaseModel):
     """Base schema for schedule template task."""
     task_id: Optional[UUID] = None
+    task_name: Optional[str] = Field(None, max_length=200, description="Custom task name overriding the default")
     day_offset: int = Field(..., ge=0, description="Days from schedule start (0 = start date)")
     task_details_template: Dict[str, Any] = Field(..., description="JSONB with calculation formulas")
     sort_order: Optional[int] = Field(0, ge=0)
