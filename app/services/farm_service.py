@@ -994,6 +994,15 @@ class FarmService:
                 )
             ))
         
+        location_details = None
+        if location_geojson and location_geojson.get("coordinates"):
+            lon, lat = location_geojson["coordinates"]
+            location_details = {
+                "address": farm.address,
+                "latitude": lat,
+                "longitude": lon
+            }
+
         return FarmResponse(
             id=str(farm.id),
             organization_id=str(farm.organization_id),
@@ -1005,6 +1014,7 @@ class FarmService:
             state=farm.state,
             pincode=farm.pincode,
             location=location_geojson,
+            location_details=location_details,
             boundary=boundary_geojson,
             area=farm.area,
             area_unit_id=str(farm.area_unit_id) if farm.area_unit_id else None,

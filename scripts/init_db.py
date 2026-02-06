@@ -190,6 +190,11 @@ def initialize_db():
             logger.info("Missing audit has_report column. Running 011_add_audit_has_report.sql...")
             run_sql_file(db, "011_add_audit_has_report.sql")
 
+        # Check 012: Consultancy Master Service
+        # We always run this as the SQL script handles idempotency (INSERT ... SELECT ... WHERE NOT EXISTS)
+        logger.info("Ensuring CONSULTANCY master service exists. Running 012_add_consultancy_master_service.sql...")
+        run_sql_file(db, "012_add_consultancy_master_service.sql")
+
 
         # Check if Roles exist (Seed Data)
         # Using count check

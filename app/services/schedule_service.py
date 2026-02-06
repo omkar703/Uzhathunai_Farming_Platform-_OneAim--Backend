@@ -641,7 +641,20 @@ class ScheduleService:
                                 "unit": unit_str,
                                 "per": per_str
                            }
-                           task.dosage = dosage_obj
+                           
+                           # CRITICAL: Use Dosage model here, not dict, to match schema?
+                           # Schema in Remote said 'Dosage', I locally used Dict in HEAD.
+                           # I merged Schema to Option[Dosage].
+                           # So I must ensure I assign a Dosage object or a dict that Pydantic can convert?
+                           # Pydantic in response mode usually handles dict->model conversion if 'from_attributes=True' (orm_mode)
+                           # But task is a Pydantic model here (from response.tasks).
+                           # Wait, response.tasks comes from `ScheduleWithTasksResponse.from_orm(schedule)`.
+                           # So `task` is a `ScheduleTaskResponse` object (Pydantic model).
+                           # I should assign a `Dosage` object or compatible dict.
+                           # The `ScheduleTaskResponse` schema (merged) expects `Optional[Dosage]`.
+                           # So I should create a Dosage object or dict.
+                           from app.schemas.schedule import Dosage
+                           task.dosage = Dosage(**dosage_obj)
 
                 # Calculate Total Quantity if missing but we have Dosage & Area
                 if task.total_quantity_required is None and data['quantity'] is not None:
@@ -932,3 +945,223 @@ class ScheduleService:
         
         new_schedule.status = 'ACTIVE' # Has tasks (copied)
         return new_schedule
+
+    def _hydrate_task_details(self, tasks: List[ScheduleTask], language_code: str = 'en') -> None:
+        """
+        Hydrate tasks with denormalized data (names, units) for API response.
+        Populates: input_item_name, application_method_name, dosage
+        """
+        logger.info(f"[HYDRATION] Starting hydration for {len(tasks) if tasks else 0} tasks")
+        
+        if not tasks:
+            logger.warning("[HYDRATION] No tasks to hydrate")
+            return
+            
+        from app.models.input_item import InputItem, InputItemTranslation
+        from app.models.measurement_unit import MeasurementUnit, MeasurementUnitTranslation
+        from app.models.reference_data import ReferenceData, ReferenceDataTranslation
+        from app.schemas.schedule import Dosage
+        
+        # 1. Collect IDs
+        input_item_ids = set()
+        unit_ids = set()
+        # application_method_ids = set() # logic for this TBD based on storage
+        
+        for task in tasks:
+            if not task.task_details or not isinstance(task.task_details, dict):
+                continue
+                
+            td = task.task_details
+            
+            # Collect from input_items
+            if 'input_items' in td and isinstance(td['input_items'], list):
+                for item in td['input_items']:
+                    if 'input_item_id' in item:
+                        input_item_ids.add(item['input_item_id'])
+                    if 'quantity_unit_id' in item:
+                        unit_ids.add(item['quantity_unit_id'])
+
+            # Collect from concentration
+            if 'concentration' in td and isinstance(td['concentration'], dict):
+                conc = td['concentration']
+                if 'total_solution_volume_unit_id' in conc:
+                    unit_ids.add(conc['total_solution_volume_unit_id'])
+                if 'ingredients' in conc and isinstance(conc['ingredients'], list):
+                    for ing in conc['ingredients']:
+                        if 'input_item_id' in ing:
+                            input_item_ids.add(ing['input_item_id'])
+                        if 'quantity_unit_id' in ing:
+                            unit_ids.add(ing['quantity_unit_id'])
+                            
+            # Collect dosage unit from direct fields if present
+            if 'dosage_unit_id' in td: # Hypothesized field
+                unit_ids.add(td['dosage_unit_id'])
+
+        logger.info(f"[HYDRATION] Collected IDs - InputItems: {len(input_item_ids)}, Units: {len(unit_ids)}")
+        
+        # 2. Bulk Fetch
+        input_item_map = {}
+        if input_item_ids:
+            # Prefer translation, fallback to code/default name
+            # For simplicity, fetching code/name. A real robust solution joins translations.
+            # Assuming 'en' for now or code.
+            items = self.db.query(InputItem).filter(InputItem.id.in_(list(input_item_ids))).all()
+            for item in items:
+                # Naive name fetch: translation or code. 
+                # Ideally: fetch translation.
+                name = item.code # Fallback
+                # Try to get translation
+                # Logic: We can't easily join in this bulk fetch without complexity.
+                # Let's rely on a property or specific fetch if needed.
+                # Checking InputItem model... has 'translations'.
+                # Accessing 'translations' might trigger N+1 if not eager loaded.
+                # Let's just use a simple name fetch for now or rely on loaded translations if lazy=False (default is lazy)
+                # To be improved: eager load.
+                
+                # Fetch translation manually or use helper
+                # Using a quick query for translations for these items
+                trans = self.db.query(InputItemTranslation).filter(
+                    InputItemTranslation.input_item_id == item.id,
+                    InputItemTranslation.language_code == language_code
+                ).first()
+                if trans:
+                    name = trans.name
+                
+                input_item_map[str(item.id)] = name
+
+        unit_map = {}
+        if unit_ids:
+            units = self.db.query(MeasurementUnit).filter(MeasurementUnit.id.in_(list(unit_ids))).all()
+            for unit in units:
+                unit_map[str(unit.id)] = unit.symbol or unit.code
+
+        logger.info(f"[HYDRATION] Fetched {len(input_item_map)} input items, {len(unit_map)} units")
+        
+        # 3. Hydrate Objects
+        from app.models.reference_data import TaskTranslation
+
+        active_task_translations = {}
+        # Optimization: Fetch task translations for all tasks in schedule if needed
+        # (Assuming laziness is okay for now or relying on existing load)
+        
+        for task in tasks:
+            # Initialize (Null by default)
+            # Use __dict__ to bypass @property setters
+            task.__dict__['input_item_name'] = None
+            task.__dict__['application_method_name'] = None
+            task.__dict__['dosage'] = None
+
+            td = task.task_details if (task.task_details and isinstance(task.task_details, dict)) else {}
+            
+            # --- Input Item Name ---
+            i_name = td.get('input_item_name') 
+            
+            if not i_name:
+                # Try concentration
+                if 'concentration' in td and isinstance(td['concentration'], dict):
+                    ings = td['concentration'].get('ingredients', [])
+                    if ings and isinstance(ings, list) and len(ings) > 0:
+                        iid = ings[0].get('input_item_id')
+                        if iid: i_name = input_item_map.get(str(iid))
+                
+                # Try input_items list
+                if not i_name and 'input_items' in td and isinstance(td['input_items'], list):
+                    items = td['input_items']
+                    if items and len(items) > 0:
+                        iid = items[0].get('input_item_id')
+                        if iid: i_name = input_item_map.get(str(iid))
+            
+            task.__dict__['input_item_name'] = i_name
+
+            # --- Application Method Name ---
+            app_name = td.get('application_method_name')
+            if not app_name:
+                 # Fallback to Task Name (e.g. "Foliar Spray")
+                 # Avoid using task.name as it might not exist.
+                 if task.task:
+                     # Try to get translation if loaded/available
+                     # This is N+1 if not careful, but for <50 tasks valid.
+                     # We can try to fetch translation for preferred lang.
+                     # Or use code as last resort.
+                     
+                     # Check if we can find translation in loaded list?
+                     # task.task.translations is a relationship.
+                     # Prefer direct query or simplified property if avail.
+                     
+                     # Simple robust fallback: Code
+                     resolved_name = task.task.code
+                     
+                     # Try translation
+                     # We can query it if not too heavy, or rely on loaded translations
+                     try:
+                         # Manual query to avoid N+1 issue on large lists? 
+                         # Actually we can trust lazy load or cache.
+                         # Let's simple query for this task's translation.
+                         t_trans = self.db.query(TaskTranslation).filter(
+                             TaskTranslation.task_id == task.task_id,
+                             TaskTranslation.language_code == language_code
+                         ).first()
+                         
+                         if not t_trans and language_code != 'en':
+                             t_trans = self.db.query(TaskTranslation).filter(
+                                 TaskTranslation.task_id == task.task_id,
+                                 TaskTranslation.language_code == 'en'
+                             ).first()
+                             
+                         if t_trans:
+                             resolved_name = t_trans.name
+                     except:
+                         pass
+                     
+                     app_name = resolved_name
+            
+            task.__dict__['application_method_name'] = app_name
+            
+            logger.debug(f"[HYDRATION] Task {task.id}: input={i_name}, method={app_name}, has_details={bool(td)}")
+
+            # --- Dosage ---
+            dosage_amt = None
+            dosage_unit = None
+            dosage_per = None 
+            
+            if 'concentration' in td and isinstance(td['concentration'], dict):
+                conc = td['concentration']
+                ings = conc.get('ingredients', [])
+                if ings and len(ings) > 0:
+                    ing = ings[0]
+                    dosage_amt = ing.get('concentration_per_liter')
+                    dosage_amt_val = dosage_amt
+                    # If it's a string, try parse? Schema says float usually.
+                    
+                    dosage_unit = unit_map.get(str(ing.get('quantity_unit_id'))) if ing.get('quantity_unit_id') else None
+                    if dosage_amt:
+                        dosage_per = "LITER_WATER"
+            
+            if dosage_amt is None and 'input_items' in td and isinstance(td['input_items'], list):
+                 items = td.get('input_items', [])
+                 if items and len(items) > 0:
+                     item = items[0]
+                     # Check for rate first
+                     if 'rate' in item:
+                          dosage_amt = item['rate']
+                          # Rate unit?
+                          # Usually implies per acre/hectare if not specified?
+                          # Or check rate_unit_id
+                     elif 'quantity' in item:
+                         # If no rate, maybe total quantity is shown.
+                         # User asked for dosage. 
+                         pass
+            
+            if dosage_amt is None:
+                 dosage_amt = td.get('dosage_amount')
+                 du_id = td.get('dosage_unit_id')
+                 if du_id: dosage_unit = unit_map.get(str(du_id))
+                 else: dosage_unit = td.get('dosage_unit')
+                 dosage_per = td.get('dosage_per')
+
+            if dosage_amt is not None:
+                task.__dict__['dosage'] = Dosage(
+                    amount=float(dosage_amt) if isinstance(dosage_amt, (int, float)) else None, # Safe cast
+                    unit=dosage_unit,
+                    per=dosage_per
+                )

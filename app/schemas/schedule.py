@@ -239,6 +239,13 @@ class ScheduleTaskStatusUpdate(BaseModel):
         return v
 
 
+class Dosage(BaseModel):
+    """Schema for task dosage details."""
+    amount: Optional[float] = None
+    unit: Optional[str] = None
+    per: Optional[str] = None
+
+
 class ScheduleTaskResponse(BaseModel):
     """Schema for schedule task response."""
     id: UUID
@@ -258,7 +265,7 @@ class ScheduleTaskResponse(BaseModel):
     input_item_name: Optional[str] = None
     application_method_name: Optional[str] = None
     total_quantity_required: Optional[float] = None
-    dosage: Optional[Dict[str, Any]] = None
+    dosage: Optional[Dosage] = None
     
     class Config:
         from_attributes = True

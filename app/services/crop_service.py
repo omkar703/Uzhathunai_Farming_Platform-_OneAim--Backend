@@ -25,9 +25,9 @@ CACHE_TTL = 300
 
 # Lifecycle state machine - defines valid transitions
 LIFECYCLE_TRANSITIONS = {
-    CropLifecycle.PLANNED: [CropLifecycle.PLANTED, CropLifecycle.TERMINATED],
-    CropLifecycle.PLANTED: [CropLifecycle.TRANSPLANTED, CropLifecycle.PRODUCTION, CropLifecycle.TERMINATED],
-    CropLifecycle.TRANSPLANTED: [CropLifecycle.PRODUCTION, CropLifecycle.TERMINATED],
+    CropLifecycle.PLANNED: [CropLifecycle.PLANTED, CropLifecycle.TRANSPLANTED, CropLifecycle.PRODUCTION, CropLifecycle.COMPLETED, CropLifecycle.TERMINATED],
+    CropLifecycle.PLANTED: [CropLifecycle.TRANSPLANTED, CropLifecycle.PRODUCTION, CropLifecycle.COMPLETED, CropLifecycle.TERMINATED],
+    CropLifecycle.TRANSPLANTED: [CropLifecycle.PRODUCTION, CropLifecycle.COMPLETED, CropLifecycle.TERMINATED],
     CropLifecycle.PRODUCTION: [CropLifecycle.COMPLETED, CropLifecycle.TERMINATED],
     CropLifecycle.COMPLETED: [CropLifecycle.CLOSED],
     CropLifecycle.TERMINATED: [CropLifecycle.CLOSED],
@@ -299,10 +299,16 @@ class CropService:
             crop.crop_variety_id = data.crop_variety_id
         if data.area is not None:
             crop.area = data.area
+        elif data.planted_area is not None: # Alias for area
+            crop.area = data.planted_area
         if data.area_unit_id is not None:
             crop.area_unit_id = data.area_unit_id
         if data.plant_count is not None:
             crop.plant_count = data.plant_count
+        if data.planted_date is not None:
+            crop.planted_date = data.planted_date
+        elif data.sowing_date is not None: # Alias for planted_date
+            crop.planted_date = data.sowing_date
         
         crop.updated_by = user_id
         
@@ -382,8 +388,8 @@ class CropService:
     def update_lifecycle(
         self,
         crop_id: UUID,
-        new_lifecycle: CropLifecycle,
         org_id: UUID,
+        new_lifecycle: CropLifecycle,
         user_id: UUID
     ) -> CropResponse:
         """
@@ -647,6 +653,27 @@ class CropService:
                 except (ValueError, TypeError):
                     pass
 
+        # Calculate season
+        season = None
+        if crop.planted_date:
+            month = crop.planted_date.month
+            year = crop.planted_date.year
+            if 6 <= month <= 10:
+                season = f"Kharif {year}"
+            elif 11 <= month <= 12:
+                season = f"Rabi {year}-{year+1}"
+            elif 1 <= month <= 3:
+                season = f"Rabi {year-1}-{year}"
+            else:
+                season = f"Zaid {year}"
+
+        # Estimated yield from variety metadata if available
+        estimated_yield = None
+        yield_unit = None
+        if crop.crop_variety and crop.crop_variety.variety_metadata:
+            estimated_yield = crop.crop_variety.variety_metadata.get("expected_yield")
+            yield_unit = crop.crop_variety.variety_metadata.get("yield_unit")
+
         return CropResponse(
             id=str(crop.id),
             plot_id=str(crop.plot_id),
@@ -676,5 +703,12 @@ class CropService:
             variety=CropVarietyNested.from_orm(crop.crop_variety) if crop.crop_variety else None,
             sowing_date=crop.planted_date,
             status=crop.lifecycle.value if crop.lifecycle else None,
-            expected_harvest_date=expected_harvest_date
+            expected_harvest_date=expected_harvest_date,
+            planted_area=crop.area,
+            planned_area=crop.area,
+            
+            # Derived fields
+            season=season,
+            estimated_yield=estimated_yield,
+            yield_unit=yield_unit
         )

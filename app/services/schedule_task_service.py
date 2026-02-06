@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.models.schedule import Schedule, ScheduleTask, ScheduleChangeLog
 from app.models.user import User
+from app.models.organization import OrgMemberRole
+from app.models.rbac import Role
 from app.models.enums import TaskStatus, ScheduleChangeTrigger
 from app.core.logging import get_logger
 from app.core.exceptions import NotFoundError, ValidationError, PermissionError
@@ -379,7 +381,13 @@ class ScheduleTaskService:
         Validates: Requirement 9.1, 9.2
         """
         # System users can manage all tasks
-        if user.is_system_user():
+        # Check if system user (SuperAdmin, Billing Admin, Support Agent)
+        system_roles = ['SUPER_ADMIN', 'BILLING_ADMIN', 'SUPPORT_AGENT']
+        user_roles = self.db.query(OrgMemberRole).join(Role).filter(
+            OrgMemberRole.user_id == user.id
+        ).all()
+        
+        if any(mr.role.code in system_roles for mr in user_roles):
             return
         
         # Get crop and check ownership

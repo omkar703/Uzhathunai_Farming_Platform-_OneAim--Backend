@@ -272,6 +272,12 @@ class FSPServiceService:
         _ = service_listing.service
         
         return service_listing
+    def create_service_listing(
+        self,
+        org_id: UUID,
+        user_id: UUID,
+        data: FSPServiceListingCreate
+    ) -> FSPServiceListing:
         """
         Create new service listing for FSP organization.
         Triggers approval process by setting org status to IN_PROGRESS.
