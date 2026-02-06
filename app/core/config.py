@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     # AWS Configuration
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
-    AWS_REGION_NAME: str = "us-east-1"
+    AWS_REGION_NAME: str = "ap-south-1"
     AWS_S3_BUCKET: str = "farm-audit-evidence"
     
     # Logging
