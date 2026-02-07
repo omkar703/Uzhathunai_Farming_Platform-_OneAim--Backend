@@ -25,7 +25,7 @@ jobs:
             echo "Reset to origin/main"
             git fetch origin main
             git reset --hard origin/main
-            git clean -fd
+            git clean -fd -e .env
 
             echo "Pulling latest code..."
             git pull origin main
