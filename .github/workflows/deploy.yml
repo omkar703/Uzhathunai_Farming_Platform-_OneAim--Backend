@@ -22,6 +22,10 @@ jobs:
 
             cd Uzhathunai_Farming_Platform-_OneAim--Backend
 
+            echo "Where am I?"
+            pwd
+            ls -la
+
             echo "Reset to origin/main"
             git fetch origin main
             git reset --hard origin/main
