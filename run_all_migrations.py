@@ -24,10 +24,12 @@ def main():
     migrations = [
         "migrations/006_add_work_order_completion_fields.py",
         "migrations/007_add_schedule_task_columns.py",
+        "migrations/008_add_audit_columns.py",
     ]
     
     print("Starting database migrations...")
     print(f"Total migrations to run: {len(migrations)}")
+
     
     for migration in migrations:
         try:
