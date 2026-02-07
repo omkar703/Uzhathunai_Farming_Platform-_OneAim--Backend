@@ -2,9 +2,10 @@
 Work Order API endpoints for Uzhathunai v2.0.
 Handles work order CRUD operations, acceptance workflow, and scope management.
 """
+import io
 from typing import Optional, List
 from uuid import UUID
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, status, Query, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -23,7 +24,8 @@ from app.schemas.work_order import (
     WorkOrderScopePermissionsUpdate,
     WorkOrderScopePermissionsUpdate,
     WorkOrderAssignRequest,
-    WorkOrderAccessUpdate
+    WorkOrderAccessUpdate,
+    WorkOrderCompleteRequest
 )
 from app.schemas.response import BaseResponse
 from app.services.work_order_service import WorkOrderService
@@ -322,6 +324,7 @@ def start_work_order(
 )
 def complete_work_order(
     work_order_id: UUID,
+    data: WorkOrderCompleteRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -338,7 +341,9 @@ def complete_work_order(
     work_order = service.update_work_order_status(
         work_order_id=work_order_id,
         new_status=WorkOrderStatus.COMPLETED,
-        user_id=current_user.id
+        user_id=current_user.id,
+        completion_notes=data.completion_notes,
+        completion_photo_url=data.completion_photo_url
     )
     return {
         "success": True,
@@ -590,4 +595,40 @@ def toggle_work_order_access(
         "success": True,
         "message": f"Access {'granted' if data.access_granted else 'revoked'} successfully",
         "data": work_order
+    }
+
+
+@router.post(
+    "/{work_order_id}/upload-proof",
+    response_model=BaseResponse[dict],
+    status_code=status.HTTP_200_OK,
+    summary="Upload work order completion proof",
+    description="Upload a photo as proof of work completion"
+)
+async def upload_work_order_proof(
+    work_order_id: UUID,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload completion proof photo.
+    """
+    service = WorkOrderService(db)
+    
+    # Read file data
+    file_data = await file.read()
+    
+    # Upload proof
+    file_url = service.upload_completion_proof(
+        work_order_id=work_order_id,
+        file_data=io.BytesIO(file_data),
+        filename=file.filename,
+        user_id=current_user.id
+    )
+    
+    return {
+        "success": True,
+        "message": "Completion proof uploaded successfully",
+        "data": {"file_url": file_url}
     }

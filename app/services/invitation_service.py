@@ -294,6 +294,7 @@ class InvitationService:
     
     def get_user_invitations(
         self,
+        user_id: UUID,
         email: str,
         status_filter: Optional[InvitationStatus] = None,
         page: int = 1,
@@ -321,9 +322,13 @@ class InvitationService:
             }
         )
         
-        # Build query
+        from sqlalchemy import or_
+        # Build query - check both email and user_id for maximum reliability
         query = self.db.query(OrgMemberInvitation).filter(
-            OrgMemberInvitation.invitee_email == email
+            or_(
+                OrgMemberInvitation.invitee_email == email,
+                OrgMemberInvitation.invitee_user_id == user_id
+            )
         )
         
         # Apply filters
@@ -575,63 +580,94 @@ class InvitationService:
         # Determine if this is a Join Request (Self-Invite)
         is_join_request = (invitation.inviter_id == invitation.invitee_user_id)
         
-        target_user_id = invitation.invitee_user_id
+        # Determine the user who is joining the organization
+        # For Join Requests: it's the invitee_user_id
+        # For Standard Invites: it's the user_id (current user) accepting it
+        joining_user_id = invitation.invitee_user_id
         
         if is_join_request:
             # Scenario 2: Join Request -> Requires Org Admin Approval
             self._check_admin_permission(invitation.organization_id, user_id)
-            # target_user_id is the user joining (inviter/invitee)
+            # joining_user_id is the user joining (inviter/invitee)
         else:
             # Scenario 1: Standard Invite -> Requires Invitee Acceptance
-            if user_id != invitation.invitee_user_id:
-                # Fallback: Check email if user_id mapping wasn't set (though logic sets it)
+            joining_user_id = user_id # The person clicking accept
+            
+            # Verify this invitation is for this user
+            if invitation.invitee_user_id and invitation.invitee_user_id != user_id:
+                raise PermissionError(
+                    message="This invitation is not for you",
+                    error_code="INVALID_USER"
+                )
+            
+            # If invitee_user_id wasn't set, verify email
+            if not invitation.invitee_user_id:
                 from app.models.user import User
                 user = self.db.query(User).filter(User.id == user_id).first()
                 if not user or user.email != invitation.invitee_email:
                     raise PermissionError(
-                        message="This invitation is not for you",
-                        error_code="INVALID_USER"
+                        message="This invitation is not for your email address",
+                        error_code="INVALID_EMAIL"
                     )
         
+        # Check if user is already a member (Idempotency check)
+        existing_member = self.db.query(OrgMember).filter(
+            OrgMember.organization_id == invitation.organization_id,
+            OrgMember.user_id == joining_user_id
+        ).first()
+
+        if existing_member:
+            self.logger.info(
+                "User is already a member, marking invitation as accepted and skipping member creation",
+                extra={
+                    "invitation_id": str(invitation_id),
+                    "user_id": str(joining_user_id),
+                    "org_id": str(invitation.organization_id),
+                    "existing_member_id": str(existing_member.id)
+                }
+            )
+            from datetime import timezone
+            now = datetime.now(timezone.utc)
+            
+            invitation.status = InvitationStatus.ACCEPTED
+            invitation.responded_at = now
+            invitation.invitee_user_id = joining_user_id
+            
+            self.db.commit()
+            
+            return {
+                "success": True,
+                "message": "User is already a member, invitation marked as accepted",
+                "member_id": str(existing_member.id)
+            }
+
         # Common Logic: Create Membership
         try:
              # Remove FREELANCER role if user is joining
             auth_service = AuthService(self.db)
-            if auth_service.is_freelancer(target_user_id):
-                auth_service.remove_freelancer_role(target_user_id)
+            if auth_service.is_freelancer(joining_user_id):
+                auth_service.remove_freelancer_role(joining_user_id)
             
             from datetime import timezone
             now = datetime.now(timezone.utc)
             
             # Create member
             member = OrgMember(
-                user_id=target_user_id,
+                user_id=joining_user_id,
                 organization_id=invitation.organization_id,
                 status=MemberStatus.ACTIVE,
                 joined_at=now,
-                invited_by=invitation.inviter_id, # Could be self
+                invited_by=invitation.inviter_id,
                 invitation_id=invitation.id
             )
             self.db.add(member)
-            self.db.flush()
             
             # Determine which role to assign
-            # If role_id is provided (admin overriding), use it
-            # Otherwise use invitation's default role_id
             assigned_role_id = role_id if role_id else invitation.role_id
-            
-            # Validate role exists if custom role provided
-            if role_id:
-                role_check = self.db.query(Role).filter(Role.id == role_id).first()
-                if not role_check:
-                    raise NotFoundError(
-                        message="Specified role not found",
-                        error_code="ROLE_NOT_FOUND"
-                    )
             
             # Assign Role
             member_role = OrgMemberRole(
-                user_id=target_user_id,
+                user_id=joining_user_id,
                 organization_id=invitation.organization_id,
                 role_id=assigned_role_id,
                 is_primary=True,
@@ -643,8 +679,7 @@ class InvitationService:
             # Update Invitation
             invitation.status = InvitationStatus.ACCEPTED
             invitation.responded_at = now
-            # invitee_user_id is already set for join/standard usually, but ensure it
-            invitation.invitee_user_id = target_user_id 
+            invitation.invitee_user_id = joining_user_id
             
             self.db.commit()
             
@@ -654,6 +689,20 @@ class InvitationService:
                 "member_id": str(member.id)
             }
             
+        except IntegrityError:
+            self.db.rollback()
+            # Double check if it was a duplicate key error
+            existing_member = self.db.query(OrgMember).filter(
+                OrgMember.organization_id == invitation.organization_id,
+                OrgMember.user_id == joining_user_id
+            ).first()
+            if existing_member:
+                return {
+                    "success": True,
+                    "message": "Invitation accepted (idempotent)",
+                    "member_id": str(existing_member.id)
+                }
+            raise
         except Exception as e:
             self.db.rollback()
             self.logger.error("Failed to accept invitation", exc_info=True)

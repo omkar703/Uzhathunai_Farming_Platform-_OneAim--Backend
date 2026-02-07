@@ -60,6 +60,8 @@ from app.services.review_service import ReviewService
 from app.services.remote_audit_service import RemoteAuditService
 from app.services.finalization_service import FinalizationService
 from app.services.sharing_service import SharingService
+from app.services.report_service import ReportService
+from app.services.audit_report_service import AuditReportService
 from app.schemas.response import BaseResponse
 
 router = APIRouter()
@@ -189,7 +191,7 @@ def get_audits(
 
     return {
         "success": True,
-        "message": "Audits retrieved successfully",
+        "message": "Audits retrieved successfully (vDebug-1)",
         "data": {
             "items": audits,
             "total": total,
@@ -980,12 +982,26 @@ def get_farmer_report(
         }
     )
 
-    service = AuditService(db)
-    report = service.get_audit_report(audit_id)
-
+    # Generate report using standardized ReportService
+    report_service = ReportService(db)
+    report = report_service.generate_report(audit_id, "en") # Standardizing on report service
+    
+    # Enrich with Rich Text Report if available (matching reports.py logic)
+    audit_report_service = AuditReportService(db)
+    rich_report = audit_report_service.get_report(audit_id)
+    
+    if rich_report:
+        report["report_html"] = rich_report.report_html
+        report["report_images"] = rich_report.report_images
+        report["report_pdf_url"] = rich_report.pdf_url
+        report["report_updated_at"] = rich_report.updated_at
+    else:
+        report["report_html"] = ""
+        report["report_images"] = []
+    
     return {
         "success": True,
-        "message": "Report retrieved successfully",
+        "message": "Report retrieved successfully (Standardized)",
         "data": report
     }
 

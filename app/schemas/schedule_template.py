@@ -203,6 +203,15 @@ class ScheduleTemplateResponse(ScheduleTemplateBase):
     updated_by: Optional[UUID] = None
     translations: List[ScheduleTemplateTranslationResponse] = []
     tasks: List[ScheduleTemplateTaskResponse] = []
+    duration_days: int = 0
+    
+    @validator('duration_days', always=True)
+    def calculate_duration_days(cls, v, values):
+        """Calculate duration from tasks."""
+        tasks = values.get('tasks', [])
+        if not tasks:
+            return 0
+        return max((t.day_offset for t in tasks), default=0)
     
     class Config:
         from_attributes = True

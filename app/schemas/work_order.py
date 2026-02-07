@@ -132,6 +132,13 @@ class WorkOrderAssignRequest(BaseModel):
     assigned_to_user_id: UUID
 
 
+class WorkOrderCompleteRequest(BaseModel):
+    """Schema for completing work order."""
+    completion_notes: Optional[str] = None
+    completion_photo_url: Optional[str] = None
+    actual_cost: Optional[float] = Field(None, ge=0)
+
+
 class WorkOrderAccessUpdate(BaseModel):
     """Schema for updating work order access."""
     access_granted: bool
@@ -167,6 +174,8 @@ class WorkOrderResponse(BaseModel):
     accepted_by: Optional[str]
     completed_at: Optional[datetime]
     cancelled_at: Optional[datetime]
+    completion_notes: Optional[str] = None
+    completion_photo_url: Optional[str] = None
     
     # New fields
     farming_organization_name: Optional[str] = None

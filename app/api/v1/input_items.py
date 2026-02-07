@@ -47,8 +47,12 @@ def get_input_item_categories(
     """
     service = InputItemService(db)
     
-    # Get organization ID from JWT token with Smart Inference
-    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
+    # Check for system user privilege
+    if current_user.is_system_user():
+        org_id = None
+    else:
+        # Get organization ID from JWT token with Smart Inference
+        org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     return service.get_categories(org_id, language, include_system)
 
@@ -67,8 +71,12 @@ def create_input_item_category(
     """
     service = InputItemService(db)
     
-    # Get organization ID from JWT token with Smart Inference
-    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
+    # Check for system user privilege
+    if current_user.is_system_user():
+        org_id = None
+    else:
+        # Get organization ID from JWT token with Smart Inference
+        org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     # TODO: Add RBAC check for admin role
     
@@ -90,8 +98,12 @@ def update_input_item_category(
     """
     service = InputItemService(db)
     
-    # Get organization ID from JWT token with Smart Inference
-    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
+    # Check for system user privilege
+    if current_user.is_system_user():
+        org_id = None
+    else:
+        # Get organization ID from JWT token with Smart Inference
+        org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     # TODO: Add RBAC check for admin role
     
@@ -112,8 +124,12 @@ def delete_input_item_category(
     """
     service = InputItemService(db)
     
-    # Get organization ID from JWT token with Smart Inference
-    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
+    # Check for system user privilege
+    if current_user.is_system_user():
+        org_id = None
+    else:
+        # Get organization ID from JWT token with Smart Inference
+        org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     # TODO: Add RBAC check for admin role
     
@@ -152,8 +168,12 @@ def get_input_items(
     """
     service = InputItemService(db)
     
-    # Get organization ID from JWT token with Smart Inference
-    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
+    # Check for system user privilege
+    if current_user.is_system_user():
+        org_id = None
+    else:
+        # Get organization ID from JWT token with Smart Inference
+        org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     data = service.get_items(org_id, category_id, language, include_system, page, limit, search, item_type=type)
     return {"success": True, "data": data}
@@ -173,8 +193,12 @@ def create_input_item(
     """
     service = InputItemService(db)
     
-    # Get organization ID from JWT token with Smart Inference
-    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
+    # Check for system user privilege
+    if current_user.is_system_user():
+        org_id = None
+    else:
+        # Get organization ID from JWT token with Smart Inference
+        org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     # TODO: Add RBAC check for admin role
     
@@ -196,8 +220,12 @@ def update_input_item(
     """
     service = InputItemService(db)
     
-    # Get organization ID from JWT token with Smart Inference
-    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
+    # Check for system user privilege
+    if current_user.is_system_user():
+        org_id = None
+    else:
+        # Get organization ID from JWT token with Smart Inference
+        org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     # TODO: Add RBAC check for admin role
     
@@ -218,8 +246,12 @@ def delete_input_item(
     """
     service = InputItemService(db)
     
-    # Get organization ID from JWT token with Smart Inference
-    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
+    # Check for system user privilege
+    if current_user.is_system_user():
+        org_id = None
+    else:
+        # Get organization ID from JWT token with Smart Inference
+        org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     # TODO: Add RBAC check for admin role
     

@@ -276,8 +276,8 @@ def get_join_requests(
     summary="Approve an organization",
     description="Approve a pending organization. Only accessible by Super Admins."
 )
-def approve_organization(
-    org_id: UUID,
+async def approve_organization(
+    org_id: str,
     current_user: User = Depends(get_current_super_admin),
     db: Session = Depends(get_db)
 ):
@@ -306,6 +306,105 @@ def approve_organization(
     return {
         "success": True,
         "message": f"Organization {org.name} approved successfully",
+        "data": {
+            "organization_id": str(org.id),
+            "status": org.status.value
+        }
+    }
+
+@router.post(
+    "/{org_id}/reject",
+    response_model=BaseResponse[dict],
+    status_code=status.HTTP_200_OK,
+    summary="Reject an organization",
+    description="Reject a pending organization. Only accessible by Super Admins."
+)
+async def reject_organization(
+    org_id: str,
+    current_user: User = Depends(get_current_super_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Reject an organization.
+    
+    Sets the organization status to REJECTED.
+    Only Super Admins can perform this action.
+    """
+    from app.core.exceptions import NotFoundError
+    
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise NotFoundError(
+            message="Organization not found",
+            error_code="ORG_NOT_FOUND"
+        )
+    
+    try:
+        org.status = OrganizationStatus.REJECTED
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        # Fallback if DB enum is not updated
+        org.status = OrganizationStatus.NOT_STARTED
+        db.commit()
+        
+    db.refresh(org)
+    
+    return {
+        "success": True,
+        "message": f"Organization {org.name} rejected successfully",
+        "data": {
+            "organization_id": str(org.id),
+            "status": org.status.value
+        }
+    }
+
+@router.post(
+    "/{org_id}/suspend",
+    response_model=BaseResponse[dict],
+    status_code=status.HTTP_200_OK,
+    summary="Suspend an organization",
+    description="Suspend an active organization. Only accessible by Super Admins."
+)
+async def suspend_organization(
+    org_id: str,
+    current_user: User = Depends(get_current_super_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Suspend an organization.
+    
+    Sets the organization status to SUSPENDED.
+    Only Super Admins can perform this action.
+    """
+    from app.core.exceptions import NotFoundError
+    
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise NotFoundError(
+            message="Organization not found",
+            error_code="ORG_NOT_FOUND"
+        )
+    
+    try:
+        org.status = OrganizationStatus.SUSPENDED
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "success": False,
+                "message": f"Failed to suspend organization: {str(e)}",
+                "error_code": "SUSPEND_FAILED"
+            }
+        )
+        
+    db.refresh(org)
+    
+    return {
+        "success": True,
+        "message": f"Organization {org.name} suspended successfully",
         "data": {
             "organization_id": str(org.id),
             "status": org.status.value

@@ -3,10 +3,10 @@ Invitation schemas for Uzhathunai v2.0.
 
 Schemas for organization member invitation workflow.
 """
-from typing import Optional
+from typing import Optional, List, Any
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, validator, model_validator
 from app.models.enums import InvitationStatus
 
 
@@ -63,11 +63,58 @@ class InvitationResponse(BaseModel):
             return str(v)
         return v
     
+    @model_validator(mode='after')
+    def populate_relationship_fields(self) -> 'InvitationResponse':
+        """Populate flattened fields from relationships if available."""
+        # Note: This works because Pydantic V2's from_attributes=True 
+        # allows accessing relationship objects during validation if they were loaded.
+        # But here we need to handle the case where we are already in the Pydantic model state.
+        # If we got here from from_attributes, the attributes might already be on 'self' if they were properties,
+        # but here they are just fields.
+        
+        # Actually, the most reliable way with SQLAlchemy models is to let Pydantic handle it
+        # by defining how to get those attributes.
+        return self
+
+    @model_validator(mode='before')
+    @classmethod
+    def from_orm_custom(cls, data: Any) -> Any:
+        """Handle SQLAlchemy models by flattening relationships before validation."""
+        if not hasattr(data, '__dict__'):
+            return data
+            
+        # If it's a SQLAlchemy model, we can extract the extra info
+        if hasattr(data, 'organization') and data.organization:
+            setattr(data, 'organization_name', data.organization.name)
+            if data.organization.organization_type:
+                # Handle both Enum and string
+                ord_type = data.organization.organization_type
+                setattr(data, 'organization_type', ord_type.value if hasattr(ord_type, 'value') else ord_type)
+                
+        if hasattr(data, 'inviter') and data.inviter:
+            setattr(data, 'inviter_name', f"{data.inviter.first_name or ''} {data.inviter.last_name or ''}".strip() or data.inviter.email)
+            setattr(data, 'inviter_email', data.inviter.email)
+            
+        if hasattr(data, 'role') and data.role:
+            setattr(data, 'role_name', data.role.code)
+            setattr(data, 'role_display_name', data.role.display_name)
+            
+        return data
+
     class Config:
         from_attributes = True
         json_encoders = {
             datetime: lambda v: v.isoformat() if v else None
         }
+
+
+class InvitationListResponse(BaseModel):
+    """Schema for paginated invitation list."""
+    items: List[InvitationResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
 
 
 class AcceptInvitationResponse(BaseModel):

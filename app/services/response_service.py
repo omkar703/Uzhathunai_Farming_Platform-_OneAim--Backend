@@ -279,12 +279,18 @@ class ResponseService:
         audit_id: UUID,
         language: str = "en"
     ) -> List[Dict[str, Any]]:
-        """Get all responses for an audit with hydrated metadata."""
+        """Get all responses for an audit with hydrated metadata and review overrides."""
+        # Join with AuditReview to get overrides
+        from app.models.audit import AuditReview
+        
         results = self.db.query(
-            AuditResponse, AuditParameterInstance
+            AuditResponse, AuditParameterInstance, AuditReview
         ).join(
             AuditParameterInstance, 
             AuditResponse.audit_parameter_instance_id == AuditParameterInstance.id
+        ).outerjoin(
+            AuditReview,
+            AuditResponse.id == AuditReview.audit_response_id
         ).filter(
             AuditResponse.audit_id == audit_id
         ).order_by(AuditResponse.created_at).all()
@@ -307,7 +313,7 @@ class ResponseService:
             
         hydrated_responses = []
         
-        for response, param_instance in results:
+        for response, param_instance, review in results:
             snapshot = param_instance.parameter_snapshot or {}
             param_type = snapshot.get("parameter_type")
             
@@ -316,10 +322,27 @@ class ResponseService:
             if not param_name and translations:
                 param_name = translations.get("en", {}).get("name", "")
                 
+            # PRIORITIZE REVIEW OVERRIDES
+            # Check review fields. AuditReview fields are response_text, response_numeric, response_date, response_option_ids
+            res_text = response.response_text
+            res_numeric = response.response_numeric
+            res_date = response.response_date
+            res_options = response.response_options
+            
+            if review:
+                if review.response_text is not None:
+                    res_text = review.response_text
+                if review.response_numeric is not None:
+                    res_numeric = review.response_numeric
+                if review.response_date is not None:
+                    res_date = review.response_date
+                if review.response_option_ids is not None:
+                    res_options = review.response_option_ids
+
             option_labels = []
-            if param_type in ["SINGLE_SELECT", "MULTI_SELECT"] and response.response_options:
+            if param_type in ["SINGLE_SELECT", "MULTI_SELECT"] and res_options:
                 options = snapshot.get("options", [])
-                for opt_id in response.response_options:
+                for opt_id in res_options:
                     option_def = next((o for o in options if o.get("option_id") == str(opt_id)), None)
                     if option_def:
                         opt_trans = option_def.get("translations", {})
@@ -336,16 +359,17 @@ class ResponseService:
                 "parameter_name": param_name,
                 "parameter_type": param_type,
                 "parameter_code": snapshot.get("code"),
-                "response_text": response.response_text,
-                "response_numeric": response.response_numeric,
-                "response_date": response.response_date,
-                "response_options": response.response_options,
+                "response_text": res_text,
+                "response_numeric": res_numeric,
+                "response_date": res_date,
+                "response_options": res_options,
                 "response_option_labels": option_labels if option_labels else None,
                 "notes": response.notes,
                 "evidence_urls": photos_by_response.get(response.id, []),
                 "created_at": response.created_at,
                 "updated_at": response.updated_at,
-                "created_by": response.created_by
+                "created_by": response.created_by,
+                "is_flagged_for_report": review.is_flagged_for_report if review else False
             }
             hydrated_responses.append(response_dict)
         

@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.core.auth import get_current_active_user
 from app.models.user import User
 from app.models.enums import InvitationStatus
-from app.schemas.invitation import InvitationResponse, AcceptInvitationRequest
+from app.schemas.invitation import InvitationResponse, InvitationListResponse, AcceptInvitationRequest
 from app.schemas.response import BaseResponse
 from app.services.invitation_service import InvitationService
 
@@ -20,7 +20,7 @@ router = APIRouter()
 
 @router.get(
     "/me",
-    response_model=BaseResponse[dict],
+    response_model=BaseResponse[InvitationListResponse],
     status_code=status.HTTP_200_OK,
     summary="Get my invitations",
     description="Get invitations for current user"
@@ -37,6 +37,7 @@ def get_my_invitations(
     """
     service = InvitationService(db)
     invitations, total = service.get_user_invitations(
+        current_user.id,
         current_user.email,
         status_filter=status_filter,
         page=page,
@@ -58,7 +59,7 @@ def get_my_invitations(
 
 @router.get(
     "/my-invitations",
-    response_model=BaseResponse[dict],
+    response_model=BaseResponse[InvitationListResponse],
     status_code=status.HTTP_200_OK,
     include_in_schema=False
 )

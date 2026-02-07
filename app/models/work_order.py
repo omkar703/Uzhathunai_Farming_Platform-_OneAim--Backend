@@ -71,6 +71,10 @@ class WorkOrder(Base):
     completed_at = Column(DateTime(timezone=True))
     cancelled_at = Column(DateTime(timezone=True))
     
+    # Completion details
+    completion_notes = Column(Text)
+    completion_photo_url = Column(String(500))
+    
     # Assignment
     assigned_to_user_id = Column(UUID(as_uuid=True), ForeignKey('users.id'))
     

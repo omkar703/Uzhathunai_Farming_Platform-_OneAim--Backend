@@ -497,12 +497,35 @@ class AuditService:
         Returns:
             Tuple of (audits list, total count)
         """
+        logger.info(f"DEBUG: [S1] Entering get_audits. farming_org_id={farming_organization_id}")
         query = self.db.query(Audit)
+        
+        # DEBUG: Dump all audits in DB to see what org IDs they have
+        all_audits = self.db.query(Audit).limit(10).all()
+        print(f"!!! DEBUG: Total audits in DB (limit 10): {len(all_audits)}", flush=True)
+        for idx, a in enumerate(all_audits):
+            print(f"!!! DEBUG: Audit[{idx}]: id={a.id}, farming_org={a.farming_organization_id}, status={a.status}", flush=True)
+
+        # DEBUG: System-wide check
+        all_count = self.db.query(func.count(Audit.id)).scalar()
+        logger.info(f"DEBUG: [S2] Total audits in DB (any org): {all_count}")
+        if all_count > 0:
+            sample = self.db.query(Audit).limit(3).all()
+            for s in sample:
+                logger.info(f"DEBUG: [S3] Sample Audit: id={s.id}, farming_org={s.farming_organization_id}, status={s.status}")
 
         # Apply filters
         if fsp_organization_id:
             query = query.filter(Audit.fsp_organization_id == fsp_organization_id)
         if farming_organization_id:
+            # DEBUG: print statements bypass logging config
+            print(f"!!! DEBUG: [S1] Entering get_audits for org: {farming_organization_id}", flush=True)
+            temp_all = self.db.query(Audit).filter(Audit.farming_organization_id == farming_organization_id).all()
+            print(f"!!! DEBUG: [S2] Total audits for org {farming_organization_id} (ignoring status): {len(temp_all)}", flush=True)
+            for a in temp_all:
+                print(f"!!! DEBUG: [S3] Audit {a.id} status: {a.status}", flush=True)
+                
+            # BROAD FILTER: Show all audits for farmer during debugging
             query = query.filter(Audit.farming_organization_id == farming_organization_id)
         if crop_id:
             query = query.filter(Audit.crop_id == crop_id)
@@ -526,6 +549,8 @@ class AuditService:
 
         # Get total count
         total = query.count()
+        logger.info(f"DEBUG: get_audits called with farming_org_id={farming_organization_id}, fsp_org_id={fsp_organization_id}, status={status}")
+        logger.info(f"DEBUG: Found {total} audits matching criteria")
 
         # Apply pagination
         offset = (page - 1) * limit
@@ -740,25 +765,45 @@ class AuditService:
                     first = next(iter(translations))
                     param_name = translations[first].get('name')
 
-            def format_val(r_obj, p_type, opts):
-                if not r_obj: return "N/A"
-                if p_type == "TEXT": return r_obj.response_text or "N/A"
-                if p_type == "NUMERIC": return str(r_obj.response_numeric) if r_obj.response_numeric is not None else "N/A"
-                if p_type == "DATE": return str(r_obj.response_date) if r_obj.response_date is not None else "N/A"
-                if p_type in ["SINGLE_SELECT", "MULTI_SELECT"] and r_obj.response_options:
-                    labels = []
-                    for opt_id in r_obj.response_options:
-                        opt_def = next((o for o in opts if o.get("option_id") == str(opt_id)), None)
-                        if opt_def:
-                            o_trans = opt_def.get("translations", {})
-                            labels.append(o_trans.get("en") or next(iter(o_trans.values())) if o_trans else str(opt_id))
-                    return ", ".join(labels) if labels else "N/A"
+            def format_val(r_obj, p_type, opts, fallback_obj=None):
+                if not r_obj and not fallback_obj: return "N/A"
+                
+                def get_v(attr):
+                    v = getattr(r_obj, attr, None) if r_obj else None
+                    if v is None and fallback_obj:
+                        v = getattr(fallback_obj, attr, None)
+                    return v
+
+                if p_type == "TEXT": 
+                    return get_v("response_text") or "N/A"
+                if p_type == "NUMERIC": 
+                    v = get_v("response_numeric")
+                    return str(v) if v is not None else "N/A"
+                if p_type == "DATE": 
+                    v = get_v("response_date")
+                    return str(v) if v is not None else "N/A"
+                if p_type in ["SINGLE_SELECT", "MULTI_SELECT"]:
+                    # Handle naming mismatch
+                    ids = getattr(r_obj, "response_option_ids", None) if r_obj else None
+                    if ids is None:
+                        ids = getattr(r_obj, "response_options", None) if r_obj else None
+                    if ids is None and fallback_obj:
+                        ids = getattr(fallback_obj, "response_options", None)
+                        
+                    if ids:
+                        labels = []
+                        for opt_id in ids:
+                            opt_def = next((o for o in opts if o.get("option_id") == str(opt_id)), None)
+                            if opt_def:
+                                o_trans = opt_def.get("translations", {})
+                                labels.append(o_trans.get("en") or next(iter(o_trans.values())) if o_trans else str(opt_id))
+                        return ", ".join(labels) if labels else "N/A"
                 return "N/A"
 
             flagged_responses_data.append({
                 "parameter_name": param_name,
                 "original_response": format_val(resp, param_type, options),
-                "reviewed_response": format_val(review, param_type, options),
+                "reviewed_response": format_val(review, param_type, options, fallback_obj=resp),
                 "is_flagged": True
             })
 

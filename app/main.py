@@ -303,6 +303,11 @@ async def root():
     }
 
 
+@app.post("/api/v1/test-suspend", tags=["Test"])
+async def test_suspend():
+    return {"message": "Test suspend endpoint reached"}
+
+
 # API v1 router
 from app.api.v1 import api_router
 app.include_router(api_router, prefix=settings.API_V1_STR)

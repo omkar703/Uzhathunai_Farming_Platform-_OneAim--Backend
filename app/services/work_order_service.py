@@ -270,7 +270,9 @@ class WorkOrderService:
         self,
         work_order_id: UUID,
         new_status: WorkOrderStatus,
-        user_id: UUID
+        user_id: UUID,
+        completion_notes: Optional[str] = None,
+        completion_photo_url: Optional[str] = None
     ) -> WorkOrder:
         """
         Update work order status with access revocation for terminal states.
@@ -320,6 +322,8 @@ class WorkOrderService:
             # Set completion/cancellation timestamps
             if new_status == WorkOrderStatus.COMPLETED:
                 work_order.completed_at = datetime.utcnow()
+                work_order.completion_notes = completion_notes
+                work_order.completion_photo_url = completion_photo_url
             elif new_status == WorkOrderStatus.CANCELLED:
                 work_order.cancelled_at = datetime.utcnow()
             
@@ -792,3 +796,32 @@ class WorkOrderService:
         
         self.logger.info("Work order started", extra={"work_order_id": str(work_order.id)})
         return work_order
+
+    def upload_completion_proof(
+        self,
+        work_order_id: UUID,
+        file_data: any, # BinaryIO
+        filename: str,
+        user_id: UUID
+    ) -> str:
+        """
+        Upload completion proof photo to storage.
+        
+        Returns:
+            URL of the uploaded photo
+        """
+        from app.services.photo_service import PhotoService
+        photo_service = PhotoService(self.db)
+        
+        # We reuse the photo_service's storage logic but with a custom path
+        # Path: work_orders/{work_order_id}/proof/{timestamp}{ext}
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        import os
+        ext = os.path.splitext(filename)[1] or '.jpg'
+        file_key = f"work_orders/{work_order_id}/proof/{timestamp}{ext}"
+        
+        # Compress and upload
+        compressed_data = photo_service._compress_image(file_data)
+        file_url = photo_service._upload_to_storage(compressed_data, file_key)
+        
+        return file_url

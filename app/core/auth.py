@@ -114,7 +114,6 @@ def get_current_active_user(
     
     Raises:
         AuthenticationError: If user is not active
-        PermissionError: If organization is not approved
     """
     if not current_user.is_active:
         raise AuthenticationError(
@@ -122,69 +121,10 @@ def get_current_active_user(
             error_code="INACTIVE_USER"
         )
 
-    print("DEBUG: get_current_active_user START", flush=True)
-
-    # Real implementation of Organization Approval Check
-    # Super admins bypass the organization approval check
-    print("DEBUG: Checking super admin status...", flush=True)
-    is_super_admin = (
-        db.query(OrgMemberRole)
-        .join(Role)
-        .filter(OrgMemberRole.user_id == current_user.id)
-        .filter(Role.code == "SUPER_ADMIN")
-        .first() is not None
-    )
+    # Note: Organization membership and approval checks are now handled 
+    # at the endpoint level or via get_organization_id() dependency.
+    # This allows freelancers to access general endpoints like /me/invitations.
     
-    if is_super_admin:
-        print("DEBUG: User is super admin", flush=True)
-        return current_user
-        
-    # Check if user has ANY active membership in an ACTIVE or IN_PROGRESS organization
-    print("DEBUG: Checking org membership...", flush=True)
-    stmt = (
-        db.query(OrgMember)
-        .join(Organization)
-        .filter(OrgMember.user_id == current_user.id)
-        .filter(OrgMember.status == MemberStatus.ACTIVE)
-        .filter(Organization.status.in_([OrganizationStatus.ACTIVE, OrganizationStatus.IN_PROGRESS]))
-    )
-    approved_membership = stmt.first()
-    print("DEBUG: Org membership checked", flush=True)
-    
-    # Let's see if they are in a truly unapproved Org (NOT_STARTED)
-    print("DEBUG: Checking unapproved membership...", flush=True)
-    stmt_unapproved = (
-        db.query(OrgMember)
-        .join(Organization)
-        .filter(OrgMember.user_id == current_user.id)
-        .filter(OrgMember.status == MemberStatus.ACTIVE)
-        .filter(Organization.status == OrganizationStatus.NOT_STARTED)
-    )
-    unapproved_membership = stmt_unapproved.first()
-    print("DEBUG: Unapproved membership checked", flush=True)
-    
-    if unapproved_membership and not approved_membership:
-        # User is part of an unapproved org and NOT part of any approved org.
-        # Block access.
-        raise PermissionError(
-            message="Your organization is awaiting approval.",
-            error_code="ORG_NOT_APPROVED"
-        )
-        
-    if not approved_membership:
-        print("DEBUG: Checking if freelancer...", flush=True)
-        # Check if they are a freelancer (role FREELANCER, org_id is None)
-        auth_service = AuthService(db)
-        if auth_service.is_freelancer(current_user.id):
-             print("DEBUG: User is freelancer, returning", flush=True)
-             return current_user
-             
-        raise AuthenticationError(
-            message="User is not a member of any active organization",
-            error_code="NO_ACTIVE_ORGANIZATION"
-        )
-        
-    print("DEBUG: get_current_active_user DONE, returning", flush=True)
     return current_user
 
 

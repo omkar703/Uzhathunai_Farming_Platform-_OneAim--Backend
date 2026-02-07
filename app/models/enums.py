@@ -19,6 +19,7 @@ class OrganizationStatus(str, PyEnum):
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
     SUSPENDED = "SUSPENDED"
+    REJECTED = "REJECTED"
 
 
 class MemberStatus(str, PyEnum):

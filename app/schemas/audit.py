@@ -90,8 +90,10 @@ class AuditResponse(BaseModel):
     template_id: UUID
     audit_number: Optional[str] = None
     name: str
+    audit_name: Optional[str] = None # Alias for frontend
     status: AuditStatusEnum
     audit_date: Optional[date] = None
+    scheduled_date: Optional[date] = None # Alias for frontend
     sync_status: Optional[SyncStatusEnum] = None
     created_at: datetime
     updated_at: datetime
@@ -589,14 +591,16 @@ class AuditReportStats(BaseModel):
 
 class AuditRecommendationCreate(BaseModel):
     """Schema for creating a standalone audit recommendation"""
-    title: str = Field(..., min_length=1, max_length=200, description="Recommendation title")
+    title: str = Field("Recommendation", min_length=1, max_length=200, description="Recommendation title")
     description: Optional[str] = Field(None, description="Recommendation description")
 
-    @validator('title')
+    @validator('title', pre=True, always=True)
     def validate_title(cls, v):
-        if not v.strip():
-            raise ValueError('Title cannot be empty')
-        return v.strip()
+        if v is None:
+            return "Recommendation"
+        if isinstance(v, str) and not v.strip():
+            return "Recommendation"
+        return v.strip() if isinstance(v, str) else v
 
 
 class AuditRecommendationUpdate(BaseModel):
@@ -630,11 +634,7 @@ class AuditReportResponse(BaseModel):
     audit: AuditResponse
     stats: AuditReportStats
     issues: List[IssueResponse]
-    stats: AuditReportStats
-    issues: List[IssueResponse]
-    schedule_recommendations: List[RecommendationResponse]
-    standalone_recommendations: List[AuditRecommendationResponse] = []
-
+    recommendations: List[Dict[str, Any]] = []
     
     # Enriched Content
     template_info: Optional[Dict[str, Any]] = None

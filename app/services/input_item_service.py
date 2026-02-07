@@ -86,15 +86,15 @@ class InputItemService:
     def create_org_category(
         self,
         data: InputItemCategoryCreate,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user_id: UUID
     ) -> InputItemCategoryResponse:
         """
-        Create organization-specific input item category.
+        Create input item category (organization-specific or system-defined).
         
         Args:
             data: Category creation data
-            org_id: Organization ID
+            org_id: Organization ID (None for system-defined categories)
             user_id: User ID creating the category
             
         Returns:
@@ -103,26 +103,42 @@ class InputItemService:
         Raises:
             ValidationError: If category code already exists for organization
         """
-        # Check if category code already exists for this org
-        existing = self.db.query(InputItemCategory).filter(
+        # Check if category code already exists
+        query = self.db.query(InputItemCategory).filter(
             and_(
                 InputItemCategory.code == data.code,
-                InputItemCategory.owner_org_id == org_id,
                 InputItemCategory.is_active == True
             )
-        ).first()
+        )
+        
+        if org_id:
+            # Check for org-specific existing category
+            query = query.filter(
+                and_(
+                    InputItemCategory.owner_org_id == org_id,
+                    InputItemCategory.is_system_defined == False
+                )
+            )
+        else:
+            # Check for system-defined existing category
+            query = query.filter(InputItemCategory.is_system_defined == True)
+            
+        existing = query.first()
         
         if existing:
             raise ValidationError(
-                message=f"Category with code '{data.code}' already exists for this organization",
+                message=f"Category with code '{data.code}' already exists",
                 error_code="DUPLICATE_CATEGORY_CODE",
                 details={"code": data.code}
             )
+            
+        # Determine strict system flag
+        is_system = org_id is None
         
         # Create category
         category = InputItemCategory(
             code=data.code,
-            is_system_defined=False,
+            is_system_defined=is_system,
             owner_org_id=org_id,
             sort_order=data.sort_order or 0,
             is_active=True,
@@ -162,7 +178,7 @@ class InputItemService:
         self,
         category_id: UUID,
         data: InputItemCategoryUpdate,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user_id: UUID
     ) -> InputItemCategoryResponse:
         """
@@ -242,7 +258,7 @@ class InputItemService:
     def delete_org_category(
         self,
         category_id: UUID,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user_id: UUID
     ) -> None:
         """
@@ -419,15 +435,15 @@ class InputItemService:
     def create_org_item(
         self,
         data: InputItemCreate,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user_id: UUID
     ) -> InputItemResponse:
         """
-        Create organization-specific input item.
+        Create input item (organization-specific or system-defined).
         
         Args:
             data: Item creation data
-            org_id: Organization ID
+            org_id: Organization ID (None for system-defined items)
             user_id: User ID creating the item
             
         Returns:
@@ -449,27 +465,43 @@ class InputItemService:
                 details={"category_id": str(data.category_id)}
             )
         
-        # Check if item code already exists for this org
-        existing = self.db.query(InputItem).filter(
+        # Check if item code already exists
+        query = self.db.query(InputItem).filter(
             and_(
                 InputItem.code == data.code,
-                InputItem.owner_org_id == org_id,
                 InputItem.is_active == True
             )
-        ).first()
+        )
+        
+        if org_id:
+            # Check for org-specific existing item
+            query = query.filter(
+                and_(
+                    InputItem.owner_org_id == org_id,
+                    InputItem.is_system_defined == False
+                )
+            )
+        else:
+            # Check for system-defined existing item
+            query = query.filter(InputItem.is_system_defined == True)
+            
+        existing = query.first()
         
         if existing:
             raise ValidationError(
-                message=f"Item with code '{data.code}' already exists for this organization",
+                message=f"Item with code '{data.code}' already exists",
                 error_code="DUPLICATE_ITEM_CODE",
                 details={"code": data.code}
             )
+        
+        # Determine strict system flag
+        is_system = org_id is None
         
         # Create item
         item = InputItem(
             code=data.code,
             category_id=data.category_id,
-            is_system_defined=False,
+            is_system_defined=is_system,
             owner_org_id=org_id,
             item_metadata=data.item_metadata or {},
             sort_order=data.sort_order or 0,
@@ -511,7 +543,7 @@ class InputItemService:
         self,
         item_id: UUID,
         data: InputItemUpdate,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user_id: UUID
     ) -> InputItemResponse:
         """
@@ -594,7 +626,7 @@ class InputItemService:
     def delete_org_item(
         self,
         item_id: UUID,
-        org_id: UUID,
+        org_id: Optional[UUID],
         user_id: UUID
     ) -> None:
         """
@@ -641,7 +673,7 @@ class InputItemService:
     def _validate_ownership(
         self,
         category: InputItemCategory,
-        org_id: UUID,
+        org_id: Optional[UUID],
         operation: str
     ) -> None:
         """
@@ -649,12 +681,16 @@ class InputItemService:
         
         Args:
             category: Category to validate
-            org_id: Organization ID attempting the operation
+            org_id: Organization ID attempting the operation (None if System Admin)
             operation: Operation being performed (update/delete)
             
         Raises:
             PermissionError: If category is system-defined or owned by another org
         """
+        # System Admin (org_id is None) can modify everything (or at least system items)
+        if org_id is None:
+            return
+
         if category.is_system_defined:
             raise PermissionError(
                 message=f"Cannot {operation} system-defined input item category",
@@ -680,7 +716,7 @@ class InputItemService:
     def _validate_item_ownership(
         self,
         item: InputItem,
-        org_id: UUID,
+        org_id: Optional[UUID],
         operation: str
     ) -> None:
         """
@@ -688,12 +724,16 @@ class InputItemService:
         
         Args:
             item: Item to validate
-            org_id: Organization ID attempting the operation
+            org_id: Organization ID attempting the operation (None if System Admin)
             operation: Operation being performed (update/delete)
             
         Raises:
             PermissionError: If item is system-defined or owned by another org
         """
+        # System Admin (org_id is None) can modify everything
+        if org_id is None:
+            return
+
         if item.is_system_defined:
             raise PermissionError(
                 message=f"Cannot {operation} system-defined input item",

@@ -145,16 +145,33 @@ class ReportService:
             }
         )
 
+        import json
+        
+        # Comprehensive debug log
+        print(f"DEBUG: [ReportGen] Audit {audit_id}: name='{audit.name}', date='{audit.audit_date}'", flush=True)
+        
+        debug_report = {
+            'audit_name': report['audit'].get('audit_name'),
+            'scheduled_date': str(report['audit'].get('scheduled_date')),
+            'recs': len(report['recommendations']),
+            'photos': len(report['flagged_photos'])
+        }
+        print(f"DEBUG: [ReportData] Final Report Dict: {json.dumps(debug_report, default=str)}", flush=True)
+
         return report
 
 
     def _get_audit_details(self, audit: Audit, language: str) -> Dict[str, Any]:
         """Get audit details."""
+        template_info = self._get_template_info(audit, language)
         return {
             "id": audit.id,
             "audit_number": audit.audit_number,
             "name": audit.name,
+            "audit_name": audit.name, # Alias for frontend
+            "template_name": template_info.get("template_name"), # Alias for frontend
             "audit_date": audit.audit_date,
+            "scheduled_date": audit.audit_date, # Alias for frontend compatibility
             "status": audit.status,
             "created_at": audit.created_at,
             "updated_at": audit.updated_at,
@@ -290,11 +307,12 @@ class ReportService:
                     if not param_name and param_translations:
                         param_name = param_translations.get("en", {}).get("name", "")
                     
-                    # Get response value (use review value if available, otherwise original)
+                    # Get response value (prioritize review overrides, fallback to original)
                     response_value = self._format_response_value(
-                        review if review else response,
+                        review,
                         parameter_snapshot,
-                        language
+                        language,
+                        original_response=response
                     )
 
                     # Determine section info
@@ -311,12 +329,7 @@ class ReportService:
                         "parameter_code": parameter_snapshot.get("code", ""),
                         "parameter_type": parameter_snapshot.get("parameter_type", ""),
                         "response_value": response_value,
-                        "notes": review.response_text if (review and review.response_text != response.response_text) else response.notes, # Use review notes/comment if different? Or keep response notes? Spec says review can change answers. 
-                        # Reviewer comment is actually typically separate but if they override answer, the text might be here.
-                        # `AuditReview` has `response_text`.
-                        # Let's keep original notes for now unless explicitly asked to show reviewer comments as notes.
-                        # Actually reviewer comments should probably be shown.
-                        # AuditResponse.notes is usually auditor notes.
+                        "notes": review.response_text if (review and review.response_text and review.response_text != response.response_text) else response.notes,
                         "created_at": response.created_at,
                         "updated_at": response.updated_at,
                         "created_by": response.created_by
@@ -328,29 +341,42 @@ class ReportService:
         self,
         response_or_review: Any,
         parameter_snapshot: Dict[str, Any],
-        language: str
+        language: str,
+        original_response: Optional[Any] = None
     ) -> str:
         """Format response value based on parameter type."""
         param_type = parameter_snapshot.get("parameter_type", "")
         
+        # Helper to get value with fallback
+        def get_val(attr_name, review_attr_name=None):
+            val = getattr(response_or_review, review_attr_name or attr_name, None)
+            if val is None and original_response:
+                val = getattr(original_response, attr_name, None)
+            return val
+
         if param_type == "TEXT":
-            return response_or_review.response_text or ""
+            return get_val("response_text") or ""
         
         elif param_type == "NUMERIC":
-            if response_or_review.response_numeric is not None:
+            val = get_val("response_numeric")
+            if val is not None:
                 unit = parameter_snapshot.get("parameter_metadata", {}).get("unit", "")
-                return f"{response_or_review.response_numeric} {unit}".strip()
+                return f"{val} {unit}".strip()
             return ""
         
         elif param_type == "DATE":
-            if response_or_review.response_date:
-                return response_or_review.response_date.isoformat()
+            val = get_val("response_date")
+            if val:
+                return val.isoformat()
             return ""
         
         elif param_type in ["SINGLE_SELECT", "MULTI_SELECT"]:
-            # Handle naming mismatch between AuditResponse and AuditReview
+            # Handle naming mismatch between AuditResponse (response_options) and AuditReview (response_option_ids)
             option_ids = getattr(response_or_review, "response_option_ids", None) or \
                          getattr(response_or_review, "response_options", None)
+            
+            if option_ids is None and original_response:
+                option_ids = getattr(original_response, "response_options", None)
             
             if option_ids:
                 # Get option display text from snapshot
@@ -391,28 +417,43 @@ class ReportService:
 
         print(f"DEBUG: [FlaggedPhotos] Found {len(photos)} total photos for audit {audit.id}", flush=True)
         
+        # BROADENED LOGIC: Pull all photos for this audit from AuditResponsePhoto
+        photos = self.db.query(AuditResponsePhoto).join(
+            AuditResponse, AuditResponsePhoto.audit_response_id == AuditResponse.id
+        ).filter(
+            AuditResponse.audit_id == audit.id
+        ).all()
+        
+        print(f"DEBUG: [ReportPhotos] Found {len(photos)} total response photos for audit {audit.id}", flush=True)
+
         for photo in photos:
-            # Check if photo has a review that is flagged
+            # Include if flagged in original photo OR review photo OR just because it exists
+            # (Satisfying user requirement to see "submitted images")
+            is_flagged = photo.is_flagged_for_report
+            caption = photo.caption
+            
+            # Check review photo status
             review_photo = self.db.query(AuditReviewPhoto).filter(
-                AuditReviewPhoto.audit_response_photo_id == photo.id,
-                AuditReviewPhoto.is_flagged_for_report == True
+                AuditReviewPhoto.audit_response_photo_id == photo.id
             ).first()
             
-            print(f"DEBUG: [FlaggedPhotos] Photo {photo.id}: review_photo={'Found' if review_photo else 'Not found'}", flush=True)
-            
             if review_photo:
-                print(f"DEBUG: [FlaggedPhotos] Adding flagged photo {photo.id} to report", flush=True)
-                flagged_photos.append({
-                    "id": photo.id,
-                    "audit_response_id": photo.audit_response_id,
-                    "file_url": photo.file_url,
-                    "file_key": photo.file_key,
-                    "caption": review_photo.caption or photo.caption,
-                    "uploaded_at": photo.uploaded_at,
-                    "uploaded_by": photo.uploaded_by
-                })
+                is_flagged = is_flagged or review_photo.is_flagged_for_report
+                if review_photo.caption:
+                    caption = review_photo.caption
+            
+            # For now, include ALL photos but mark which ones were flagged
+            flagged_photos.append({
+                "id": photo.id,
+                "audit_response_id": photo.audit_response_id,
+                "file_url": photo.file_url,
+                "file_key": photo.file_key,
+                "caption": caption or "Audit Evidence",
+                "is_flagged": is_flagged,
+                "uploaded_at": photo.uploaded_at,
+                "uploaded_by": photo.uploaded_by
+            })
         
-        print(f"DEBUG: [FlaggedPhotos] Returning {len(flagged_photos)} flagged photos", flush=True)
         return flagged_photos
 
     def _get_issues_by_severity(self, audit: Audit) -> Dict[str, List[Dict[str, Any]]]:
@@ -450,38 +491,48 @@ class ReportService:
 
     def _get_recommendations(self, audit: Audit) -> List[Dict[str, Any]]:
         """
-        Get all recommendations from schedule_change_log.
-        
-        Requirements: 18.5
+        Get combined recommendations from multiple sources.
+        1. schedule_change_log (linked tasks)
+        2. standalone_recommendations (general advice)
         """
-        recommendations = self.db.query(ScheduleChangeLog).filter(
+        # 1. Get schedule-linked recommendations
+        schedule_recs = self.db.query(ScheduleChangeLog).filter(
             and_(
                 ScheduleChangeLog.trigger_type == "AUDIT",
                 ScheduleChangeLog.trigger_reference_id == audit.id
             )
         ).all()
         
-        recommendation_list = []
-        for rec in recommendations:
-            # Extract basic info from task_details_after if available
-            title = rec.change_type
-            description = rec.change_description
-            
-            recommendation_list.append({
-                "id": rec.id,
-                "schedule_id": rec.schedule_id,
-                "change_type": rec.change_type,
-                "task_id": rec.task_id,
-                "task_details_before": rec.task_details_before,
-                "task_details_after": rec.task_details_after,
-                "change_description": rec.change_description,
-                "is_applied": rec.is_applied,
-                "applied_at": rec.applied_at,
-                "applied_by": rec.applied_by,
-                "created_at": rec.created_at,
-                "created_by": rec.created_by
-            })
+        # 2. Get standalone recommendations
+        from app.models.audit import AuditRecommendation
+        standalone_recs = self.db.query(AuditRecommendation).filter(
+            AuditRecommendation.audit_id == audit.id
+        ).all()
         
-        return recommendation_list
+        combined_list = []
+        
+        # Map schedule recs
+        for rec in schedule_recs:
+            combined_list.append({
+                "id": str(rec.id),
+                "title": f"Schedule: {rec.change_type}",
+                "description": rec.change_description,
+                "type": "SCHEDULE",
+                "is_applied": rec.is_applied,
+                "created_at": rec.created_at
+            })
+            
+        # Map standalone recs
+        for rec in standalone_recs:
+            combined_list.append({
+                "id": str(rec.id),
+                "title": rec.title or "Recommendation",
+                "description": rec.description,
+                "type": "STANDALONE",
+                "is_applied": False,
+                "created_at": rec.created_at
+            })
+            
+        return combined_list
 
 
