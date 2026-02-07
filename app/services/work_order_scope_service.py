@@ -134,11 +134,16 @@ class WorkOrderScopeService:
                 self.db.add(scope_item)
                 created_items.append(scope_item)
             
+            
+            # FIX: Flush to ensure items are visible to the query in calculate_scope_metadata
+            self.db.flush()
+
             # Update scope metadata
             self._update_scope_metadata(work_order_id)
             
             self.db.commit()
             
+            # Refresh items
             # Refresh items
             for item in created_items:
                 self.db.refresh(item)
