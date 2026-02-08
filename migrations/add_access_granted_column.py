@@ -6,12 +6,13 @@ import psycopg2
 import os
 
 # Database connection parameters
+# Database connection parameters
 DB_CONFIG = {
-    'host': 'localhost',
-    'port': 5433,
-    'database': 'uzhathunai_db_v2',
-    'user': 'postgres',
-    'password': 'postgres'
+    'host': os.getenv('POSTGRES_SERVER', 'db'),
+    'port': int(os.getenv('POSTGRES_PORT', 5432)),
+    'database': os.getenv('POSTGRES_DB', 'farm_db'),
+    'user': os.getenv('POSTGRES_USER', 'postgres'),
+    'password': os.getenv('POSTGRES_PASSWORD', 'postgres')
 }
 
 def run_migration():
