@@ -130,6 +130,7 @@ def get_current_active_user(
 
 # Optional: Get current user without raising exception
 def get_current_user_optional(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ) -> Optional[User]:
@@ -138,6 +139,7 @@ def get_current_user_optional(
     Useful for endpoints that work with or without authentication.
     
     Args:
+        request: FastAPI Request object (for caching)
         credentials: HTTP Authorization credentials (optional)
         db: Database session
     
@@ -148,7 +150,7 @@ def get_current_user_optional(
         return None
     
     try:
-        return get_current_user(credentials, db)
+        return get_current_user(request, credentials, db)
     except HTTPException:
         return None
 
