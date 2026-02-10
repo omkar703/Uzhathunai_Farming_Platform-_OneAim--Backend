@@ -546,6 +546,8 @@ class OrganizationService:
         
         return response_data
 
+        return org
+
     def get_marketplace_provider_details(
         self,
         org_id: UUID
@@ -594,6 +596,27 @@ class OrganizationService:
                 _ = service.service
                 
             org.services = services
+
+        # Fallback: If description or phone are missing, try to get from Creator (User)
+        # This is useful because many initial organizations are created with just a name,
+        # but the user profile is rich.
+        if (not org.description or not org.contact_phone) and org.creator:
+            try:
+                # org.creator is a relationship, accessing it triggers lazy load if not eager loaded
+                creator = org.creator
+                if creator:
+                    if not org.description and creator.bio:
+                        # We use setattr to modify the object in memory for the response
+                        # Note: This does NOT save to DB unless commit() is called
+                        org.description = creator.bio
+                        
+                    if not org.contact_phone and creator.phone:
+                        org.contact_phone = creator.phone
+            except Exception as e:
+                self.logger.warning(
+                    "Failed to fallback to creator details", 
+                    extra={"org_id": str(org_id), "error": str(e)}
+                )
             
         return org
     
