@@ -27,6 +27,7 @@ class Crop(Base):
     description = Column(Text)
     crop_type_id = Column(UUID(as_uuid=True), ForeignKey('crop_types.id'))
     crop_variety_id = Column(UUID(as_uuid=True), ForeignKey('crop_varieties.id'))
+    variety_name = Column(String(200)) # Added for custom variety names
     area = Column(Numeric(15, 4))
     area_unit_id = Column(UUID(as_uuid=True), ForeignKey('measurement_units.id'))
     plant_count = Column(Integer)

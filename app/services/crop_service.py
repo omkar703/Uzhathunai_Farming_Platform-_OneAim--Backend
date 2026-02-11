@@ -90,7 +90,11 @@ class CropService:
         # Resolve variety_name to crop_variety_id if provided
         crop_variety_id = data.crop_variety_id
         if data.variety_name and not crop_variety_id:
-            crop_variety_id = self._find_variety_by_name(data.variety_name)
+            try:
+                crop_variety_id = self._find_variety_by_name(data.variety_name)
+            except NotFoundError:
+                # If not found, we will use variety_name field
+                crop_variety_id = None
         
         # Create crop
         crop = Crop(
@@ -99,11 +103,13 @@ class CropService:
             description=data.description,
             crop_type_id=data.crop_type_id,
             crop_variety_id=crop_variety_id,
+            variety_name=data.variety_name if not crop_variety_id else None, # Save name if ID not found
             area=data.area,
             area_unit_id=data.area_unit_id,
             plant_count=data.plant_count,
-            lifecycle=CropLifecycle.PLANNED,
+            lifecycle=CropLifecycle.PLANTED if data.sowing_date else CropLifecycle.PLANNED,
             planned_date=data.planned_date,
+            planted_date=data.sowing_date,
             created_by=user_id,
             updated_by=user_id
         )
@@ -681,6 +687,7 @@ class CropService:
             description=crop.description,
             crop_type_id=str(crop.crop_type_id) if crop.crop_type_id else None,
             crop_variety_id=str(crop.crop_variety_id) if crop.crop_variety_id else None,
+            variety_name=crop.variety_name,
             crop_type=CropTypeNested.from_orm(crop.crop_type) if crop.crop_type else None,
             crop_variety=CropVarietyNested.from_orm(crop.crop_variety) if crop.crop_variety else None,
             area=crop.area,

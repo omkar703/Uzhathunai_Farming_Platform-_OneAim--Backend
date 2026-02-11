@@ -219,16 +219,21 @@ class WorkflowService:
                         "error": photo_validation["error"]
                     })
 
-        # Raise validation error if any issues found
         if missing_required or photo_violations:
             error_details = {}
+            error_summary = []
+            
             if missing_required:
                 error_details["missing_required_responses"] = missing_required
+                error_summary.append(f"Missing: {', '.join(missing_required)}")
             if photo_violations:
                 error_details["photo_requirement_violations"] = photo_violations
+                error_summary.append(f"Photo issues: {len(photo_violations)}")
+            
+            summary_str = f" ({'; '.join(error_summary)})" if error_summary else ""
             
             raise ValidationError(
-                message="Audit does not meet submission requirements",
+                message=f"Audit does not meet submission requirements{summary_str}",
                 error_code="SUBMISSION_REQUIREMENTS_NOT_MET",
                 details=error_details
             )
@@ -289,7 +294,18 @@ class WorkflowService:
 
         translations = snapshot.get("translations", {})
         en_translation = translations.get("en", {})
-        return en_translation.get("name", f"Parameter {instance.parameter_id}")
+        name = en_translation.get("name")
+        
+        if name:
+            return name
+            
+        # Fallback to live parameter data
+        if instance.parameter and instance.parameter.translations:
+            for t in instance.parameter.translations:
+                if t.language_code == "en":
+                    return t.name
+                    
+        return f"Parameter {instance.parameter_id}"
 
     def validate_submission_readiness(self, audit_id: UUID) -> Dict[str, any]:
         """

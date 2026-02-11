@@ -23,6 +23,7 @@ class CropCreate(BaseModel):
     area_unit_id: Optional[UUID] = None
     plant_count: Optional[int] = Field(None, ge=0)
     planned_date: Optional[date] = None
+    sowing_date: Optional[date] = None
     
     @validator('name')
     def validate_name(cls, v):
@@ -109,6 +110,7 @@ class CropResponse(BaseModel):
     crop_variety_id: Optional[str]
     crop_type: Optional[CropTypeNested] = None
     crop_variety: Optional[CropVarietyNested] = None
+    variety_name: Optional[str] = None # Added for custom variety names
     area: Optional[Decimal]
     area_unit_id: Optional[str]
     plant_count: Optional[int]
