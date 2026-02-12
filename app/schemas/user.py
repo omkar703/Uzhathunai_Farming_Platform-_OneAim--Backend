@@ -64,6 +64,7 @@ class UserUpdate(BaseModel):
     preferred_language: Optional[str] = Field(None, max_length=10)
     bio: Optional[str] = None
     address: Optional[str] = None
+    specialization: Optional[str] = Field(None, max_length=200)
     
     @validator('phone')
     def validate_phone(cls, v):
@@ -96,6 +97,7 @@ class UserResponse(BaseModel):
     preferred_language: str
     bio: Optional[str] = None
     address: Optional[str] = None
+    specialization: Optional[str] = None
     profile_picture_url: Optional[str] = None
     is_active: bool
     is_verified: bool
