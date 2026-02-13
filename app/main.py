@@ -184,6 +184,14 @@ async def app_validation_exception_handler(request: Request, exc: AppValidationE
 @app.exception_handler(AppPermissionError)
 async def permission_exception_handler(request: Request, exc: AppPermissionError):
     """Handle permission errors."""
+    logger.error(
+        f"Permission denied: {exc.message}",
+        extra={
+            "error_code": exc.error_code,
+            "details": exc.details,
+            "path": getattr(request, "path", "unknown"),
+        }
+    )
     return JSONResponse(
         status_code=status.HTTP_403_FORBIDDEN,
         content={
