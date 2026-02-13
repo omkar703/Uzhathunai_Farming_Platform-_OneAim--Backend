@@ -48,6 +48,7 @@ class OrganizationCreate(BaseModel):
     pincode: Optional[str] = Field(None, max_length=20)
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = Field(None, max_length=20)
+    specialization: Optional[str] = Field(None, max_length=200)
     # FSP-specific
     services: List[FSPServiceListingCreate] = Field(default_factory=list)
     
@@ -77,6 +78,7 @@ class OrganizationUpdate(BaseModel):
     pincode: Optional[str] = Field(None, max_length=20)
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = Field(None, max_length=20)
+    specialization: Optional[str] = Field(None, max_length=200)
     
     @validator('name')
     def validate_name(cls, v):
@@ -102,6 +104,7 @@ class OrganizationResponse(BaseModel):
     pincode: Optional[str]
     contact_email: Optional[str]
     contact_phone: Optional[str]
+    specialization: Optional[str]
     subscription_plan_id: Optional[str]
     subscription_start_date: Optional[date]
     subscription_end_date: Optional[date]
@@ -207,7 +210,7 @@ class OrganizationWorkOrderSummary(BaseModel):
     id: str
     status: str
     service_name: str
-    start_date: Optional[datetime] = None
+    start_date: Optional[date] = None
     amount: Optional[float] = None
     
     @validator('id', pre=True)

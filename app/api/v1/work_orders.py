@@ -144,13 +144,19 @@ def get_work_orders(
     """
     from app.core.organization_context import get_organization_id
     
-    # 1. Force the active organization ID as the base filter
-    active_org_id = get_organization_id(current_user, db)
+    # 1. Determine organization context
+    is_admin = getattr(current_user, '_is_system_user', False)
+    
+    target_org_id = organization_id
+    
+    if not is_admin:
+        # Standard user: Force the active organization ID as the base filter
+        target_org_id = get_organization_id(current_user, db)
     
     service = WorkOrderService(db)
     work_orders, total = service.get_work_orders(
         user_id=current_user.id,
-        organization_id=active_org_id if not organization_id else organization_id,
+        organization_id=target_org_id,
         fsp_organization_id=fsp_id,
         farming_organization_id=farming_id,
         status=status_filter,

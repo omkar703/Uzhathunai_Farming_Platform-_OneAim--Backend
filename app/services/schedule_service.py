@@ -9,7 +9,7 @@ import uuid
 import logging
 from uuid import UUID
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, func
 
 from app.models.schedule import Schedule, ScheduleTask
 from app.models.schedule_template import ScheduleTemplate, ScheduleTemplateTask
@@ -17,8 +17,8 @@ from app.models.crop import Crop
 from app.models.user import User
 from app.models.enums import TaskStatus, WorkOrderStatus
 from app.models.input_item import InputItem
-from app.models.reference_data import ReferenceData
-from app.schemas.schedule import ScheduleWithTasksResponse
+from app.models.reference_data import Task, ReferenceData
+from app.schemas.schedule import ScheduleWithTasksResponse, ScheduleTaskCreate
 from app.core.logging import get_logger
 from app.core.exceptions import NotFoundError, ValidationError, PermissionError
 from app.services.schedule_calculation_service import ScheduleCalculationService
@@ -186,7 +186,8 @@ class ScheduleService:
         description: Optional[str],
         user: User,
         start_date: Optional[date] = None,
-        template_parameters: Optional[Dict[str, Any]] = None
+        template_parameters: Optional[Dict[str, Any]] = None,
+        items: Optional[List[ScheduleTaskCreate]] = None
     ) -> Schedule:
         """
         Create schedule from scratch without template.
@@ -198,9 +199,10 @@ class ScheduleService:
             user: User creating the schedule
             start_date: Optional start date
             template_parameters: Optional parameters (area, etc.)
+            items: Optional tasks to create
         
         Returns:
-            Schedule: Created schedule (without tasks)
+            Schedule: Created schedule with tasks
         
         Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5
         """
@@ -234,15 +236,65 @@ class ScheduleService:
         )
         
         self.db.add(schedule)
+        self.db.flush()
+        
+        # Add tasks if provided
+        if items:
+            for item in items:
+                # Consolidate task_details from top-level fields if needed
+                td = item.task_details or {}
+                if item.input_item_id:
+                    td['input_item_id'] = str(item.input_item_id)
+                if item.application_method_id:
+                    td['application_method_id'] = str(item.application_method_id)
+                if item.dosage:
+                    td['dosage'] = item.dosage
+                
+                # If task_id is missing, try to map from input item
+                task_id = item.task_id
+                if not task_id and td:
+                    input_item_id = td.get('input_item_id')
+                    if input_item_id:
+                        input_item = self.db.query(InputItem).filter(InputItem.id == input_item_id).first()
+                        if input_item:
+                            target_code = 'GENERAL_FARMING' # Default fallback
+                            if input_item.type == 'FERTILIZER':
+                                target_code = 'FERTIGATION'
+                            elif input_item.type == 'PESTICIDE':
+                                target_code = 'FOLIAR_SPRAY'
+                            
+                            mapped_task = self.db.query(Task).filter(Task.code == target_code).first()
+                            if mapped_task:
+                                task_id = mapped_task.id
+                
+                if not task_id:
+                    fallback_task = self.db.query(Task).order_by(Task.sort_order).first()
+                    if fallback_task:
+                        task_id = fallback_task.id
+
+                # Create schedule task
+                schedule_task = ScheduleTask(
+                    schedule_id=schedule.id,
+                    task_id=task_id,
+                    due_date=item.due_date or start_date or date.today(),
+                    status=TaskStatus.NOT_STARTED.value,
+                    task_details=td,
+                    notes=item.notes,
+                    created_by=user.id,
+                    updated_by=user.id
+                )
+                self.db.add(schedule_task)
+
         self.db.commit()
         self.db.refresh(schedule)
         
         logger.info(
-            "Schedule created from scratch",
+            "Schedule created from scratch with tasks",
             extra={
                 "schedule_id": str(schedule.id),
                 "crop_id": str(crop_id),
-                "user_id": str(user.id)
+                "user_id": str(user.id),
+                "task_count": len(items) if items else 0
             }
         )
         
@@ -253,6 +305,8 @@ class ScheduleService:
         self,
         user: User,
         crop_id: Optional[UUID] = None,
+        fsp_id: Optional[UUID] = None,
+        status: Optional[str] = None,
         page: int = 1,
         limit: int = 20
     ) -> Tuple[List[Schedule], int]:
@@ -262,6 +316,8 @@ class ScheduleService:
         Args:
             user: User requesting schedules
             crop_id: Optional filter by crop
+            fsp_id: Optional filter by Service Partner organization
+            status: Optional filter by status (ACTIVE, CANCELLED)
             page: Page number
             limit: Items per page
         
@@ -273,11 +329,31 @@ class ScheduleService:
         offset = (page - 1) * limit
         
         # Build base query
-        query = self.db.query(Schedule).filter(Schedule.is_active == True)
+        query = self.db.query(Schedule)
         
+        # Filter by status if specified
+        if status:
+            if status == 'ACTIVE':
+                query = query.filter(Schedule.is_active == True)
+            elif status == 'CANCELLED':
+                query = query.filter(Schedule.is_active == False)
+        else:
+            # Default to active schedules unless explicitly filtered
+            query = query.filter(Schedule.is_active == True)
+            
         # Filter by crop if specified
         if crop_id:
             query = query.filter(Schedule.crop_id == crop_id)
+            
+        # Filter by FSP if specified
+        if fsp_id:
+            from app.models.organization import OrgMember
+            # Find users who are members of the given FSP organization
+            fsp_user_ids = self.db.query(OrgMember.user_id).filter(
+                OrgMember.organization_id == fsp_id
+            ).all()
+            user_ids = [uid[0] for uid in fsp_user_ids]
+            query = query.filter(Schedule.created_by.in_(user_ids))
         
         # Apply access control
         if user.is_system_user():
@@ -296,6 +372,14 @@ class ScheduleService:
         
         # Populate computed fields for response schema
         for schedule in schedules:
+            # 0. Populate task counts for list view
+            from app.models.schedule import ScheduleTask
+            schedule.total_tasks = self.db.query(func.count(ScheduleTask.id)).filter(ScheduleTask.schedule_id == schedule.id).scalar()
+            schedule.completed_tasks = self.db.query(func.count(ScheduleTask.id)).filter(
+                ScheduleTask.schedule_id == schedule.id,
+                ScheduleTask.status == TaskStatus.COMPLETED
+            ).scalar()
+
             # 1. Computed Status
             # Logic: If active -> ACTIVE, else CANCELLED. 
             # TODO: Add logic for COMPLETED based on all tasks being completed

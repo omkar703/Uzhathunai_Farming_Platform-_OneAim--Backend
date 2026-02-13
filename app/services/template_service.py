@@ -175,6 +175,7 @@ class TemplateService:
         self,
         organization_id: Optional[UUID] = None,
         crop_type_id: Optional[UUID] = None,
+        owner_org_id: Optional[UUID] = None,
         is_active: Optional[bool] = None,
         page: int = 1,
         limit: int = 20
@@ -213,6 +214,9 @@ class TemplateService:
         # Apply filters
         if crop_type_id is not None:
             query = query.filter(Template.crop_type_id == crop_type_id)
+
+        if owner_org_id is not None:
+            query = query.filter(Template.owner_org_id == owner_org_id)
 
         if is_active is not None:
             query = query.filter(Template.is_active == is_active)

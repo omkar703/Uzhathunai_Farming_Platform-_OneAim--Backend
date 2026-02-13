@@ -80,7 +80,7 @@ def create_input_item_category(
     
     # TODO: Add RBAC check for admin role
     
-    return service.create_org_category(org_id, data, current_user.id)
+    return service.create_org_category(data, org_id, current_user.id)
 
 
 @router.put("/categories/{category_id}", response_model=InputItemCategoryResponse)
@@ -107,7 +107,7 @@ def update_input_item_category(
     
     # TODO: Add RBAC check for admin role
     
-    return service.update_org_category(category_id, org_id, data, current_user.id)
+    return service.update_org_category(category_id, data, org_id, current_user.id)
 
 
 @router.delete("/categories/{category_id}", status_code=204)
@@ -229,7 +229,7 @@ def update_input_item(
     
     # TODO: Add RBAC check for admin role
     
-    return service.update_org_item(item_id, org_id, data, current_user.id)
+    return service.update_org_item(item_id, data, org_id, current_user.id)
 
 
 @router.delete("/{item_id}", status_code=204)

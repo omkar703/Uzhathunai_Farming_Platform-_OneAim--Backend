@@ -62,8 +62,6 @@ class UserUpdate(BaseModel):
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
     phone: Optional[str] = Field(None, max_length=20)
     preferred_language: Optional[str] = Field(None, max_length=10)
-    bio: Optional[str] = None
-    address: Optional[str] = None
     specialization: Optional[str] = Field(None, max_length=200)
     
     @validator('phone')
@@ -95,8 +93,6 @@ class UserResponse(BaseModel):
     last_name: Optional[str]
     phone: Optional[str]
     preferred_language: str
-    bio: Optional[str] = None
-    address: Optional[str] = None
     specialization: Optional[str] = None
     profile_picture_url: Optional[str] = None
     is_active: bool

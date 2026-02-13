@@ -313,7 +313,8 @@ class ScheduleTaskService:
     def get_upcoming_tasks(
         self,
         user: User,
-        days_ahead: int = 7
+        days_ahead: int = 7,
+        crop_id: Optional[UUID] = None
     ) -> List[Dict[str, Any]]:
         """
         Get upcoming incomplete tasks across all accessible schedules.
@@ -333,8 +334,14 @@ class ScheduleTaskService:
         accessible_crop_ids = ScheduleService(self.db)._get_accessible_crop_ids(user)
         
         # Query tasks
-        tasks = self.db.query(ScheduleTask).join(Schedule).filter(
-            Schedule.crop_id.in_(accessible_crop_ids),
+        query = self.db.query(ScheduleTask).join(Schedule)
+        
+        if crop_id:
+            query = query.filter(Schedule.crop_id == crop_id)
+        else:
+            query = query.filter(Schedule.crop_id.in_(accessible_crop_ids))
+            
+        tasks = query.filter(
             Schedule.is_active == True,
             ScheduleTask.status.in_([TaskStatus.NOT_STARTED, TaskStatus.IN_PROGRESS]),
             ScheduleTask.due_date >= today

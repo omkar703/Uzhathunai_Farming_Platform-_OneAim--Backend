@@ -48,6 +48,7 @@ def get_user_organization_id(user: User, db: Session) -> Optional[UUID]:
     from typing import Optional
 
     # Check for Super Admin role first
+    # Use a more direct query to avoid join issues if multiple roles exists
     is_super_admin = db.query(OrgMemberRole).join(Role).filter(
         OrgMemberRole.user_id == user.id,
         Role.code == "SUPER_ADMIN"
@@ -63,7 +64,10 @@ def get_user_organization_id(user: User, db: Session) -> Optional[UUID]:
     ).first()
     
     if not membership:
-        # TODO: Add proper system user check if other system roles exist
+        # If user is not super admin and not a member, raise error
+        # But for robustness, if we can't find membership, maybe they are a system user?
+        # Let's rely on the is_super_admin check.
+        # If they fail both, raising explicit error.
         raise PermissionError(
             message="User is not a member of any organization",
             error_code="NO_ORGANIZATION_MEMBERSHIP"
@@ -125,6 +129,7 @@ def has_consultancy_service(user: User, db: Session) -> bool:
 @router.get("", response_model=BaseResponse[TemplateListResponse])
 def get_templates(
     crop_type_id: UUID = Query(None, description="Filter by crop type"),
+    owner_org_id: UUID = Query(None, description="Filter by owner organization"),
     is_active: bool = Query(None, description="Filter by active status"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
@@ -151,6 +156,7 @@ def get_templates(
     templates, total = service.get_templates(
         organization_id=org_id,
         crop_type_id=crop_type_id,
+        owner_org_id=owner_org_id,
         is_active=is_active,
         page=page,
         limit=limit

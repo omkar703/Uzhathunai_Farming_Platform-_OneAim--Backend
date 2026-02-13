@@ -18,6 +18,41 @@ from fastapi import Query
 
 router = APIRouter()
 
+
+@router.post(
+    "/organizations/approve-all",
+    response_model=BaseResponse[dict],
+    status_code=status.HTTP_200_OK,
+    summary="Approve all pending organizations",
+    description="Approve all organizations with NOT_STARTED status. Only accessible by Super Admins."
+)
+async def approve_all_pending_organizations(
+    current_user: User = Depends(get_current_super_admin),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Approve all pending (NOT_STARTED) organizations.
+    """
+    from app.models.organization import OrganizationStatus
+    
+    # Update all NOT_STARTED and IN_PROGRESS organizations to ACTIVE
+    # Using bulk update for efficiency
+    result = db.query(Organization).filter(
+        Organization.status.in_([OrganizationStatus.NOT_STARTED, OrganizationStatus.IN_PROGRESS])
+    ).update(
+        {Organization.status: OrganizationStatus.ACTIVE},
+        synchronize_session=False
+    )
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Approved {result} organization(s) successfully",
+        "data": {"approved_count": result}
+    }
+
+
 @router.post(
     "/organizations/{organization_id}/approve",
     response_model=BaseResponse[dict],

@@ -31,7 +31,7 @@ class ZoomService:
         
         # Try fetch from Redis
         if self.redis:
-            cached_token = await self.redis.get(cache_key)
+            cached_token = self.redis.get(cache_key)
             if cached_token:
                 return cached_token
 
@@ -61,7 +61,7 @@ class ZoomService:
             
             # Cache in Redis (subtract 60s buffer)
             if self.redis:
-                await self.redis.set(cache_key, access_token, ex=expires_in - 60)
+                self.redis.set(cache_key, access_token, ex=expires_in - 60)
             
             return access_token
 

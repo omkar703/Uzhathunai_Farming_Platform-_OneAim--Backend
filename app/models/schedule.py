@@ -75,15 +75,27 @@ class Schedule(Base):
     @property
     def total_tasks(self):
         """Total count of tasks in this schedule."""
+        if hasattr(self, '_total_tasks'):
+            return self._total_tasks
         return len(self.tasks) if self.tasks else 0
+
+    @total_tasks.setter
+    def total_tasks(self, value):
+        self._total_tasks = value
 
     @property
     def completed_tasks(self):
         """Count of completed tasks."""
+        if hasattr(self, '_completed_tasks'):
+            return self._completed_tasks
         if not self.tasks:
             return 0
         from app.models.enums import TaskStatus
         return len([t for t in self.tasks if t.status == TaskStatus.COMPLETED])
+
+    @completed_tasks.setter
+    def completed_tasks(self, value):
+        self._completed_tasks = value
 
     @property
     def items(self):

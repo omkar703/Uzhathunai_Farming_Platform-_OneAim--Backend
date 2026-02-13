@@ -25,6 +25,7 @@ def main():
         "migrations/006_add_work_order_completion_fields.py",
         "migrations/007_add_schedule_task_columns.py",
         "migrations/008_add_audit_columns.py",
+        "migrations/011_create_video_sessions_table.py",
     ]
     
     print("Starting database migrations...")

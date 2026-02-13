@@ -35,8 +35,6 @@ class User(Base):
     first_name = Column(String(100))
     last_name = Column(String(100))
     phone = Column(String(20), index=True)
-    bio = Column(Text)
-    address = Column(Text)
     specialization = Column(String(200))
     profile_picture_url = Column(String(500))
     
@@ -94,8 +92,7 @@ class User(Base):
             "first_name": self.first_name,
             "last_name": self.last_name,
             "phone": self.phone,
-            "bio": self.bio,
-            "address": self.address,
+            "phone": self.phone,
             "specialization": self.specialization,
             "profile_picture_url": self.profile_picture_url,
             "preferred_language": self.preferred_language,

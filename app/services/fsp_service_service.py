@@ -511,6 +511,7 @@ class FSPServiceService:
         Raises:
             NotFoundError: If service listing not found
             PermissionError: If user doesn't have permission
+            ValidationError: If service listing is referenced by work orders
         """
         self.logger.info(
             "Deleting service listing",
@@ -532,6 +533,23 @@ class FSPServiceService:
         
         # Validate ownership - user must be admin of the FSP organization that owns this listing
         self._check_admin_permission(service_listing.fsp_organization_id, user_id)
+        
+        # Check for work order references
+        from app.models.work_order import WorkOrder
+        work_order_count = self.db.query(WorkOrder).filter(
+            WorkOrder.service_listing_id == service_id
+        ).count()
+        
+        if work_order_count > 0:
+            raise ValidationError(
+                message=f"Cannot delete service listing because it is referenced by {work_order_count} work order(s). Please deactivate the listing instead.",
+                error_code="SERVICE_LISTING_IN_USE",
+                details={
+                    "service_id": str(service_id),
+                    "work_order_count": work_order_count,
+                    "suggestion": "Use the deactivate endpoint to mark this service as inactive instead of deleting it."
+                }
+            )
         
         try:
             self.db.delete(service_listing)

@@ -3,7 +3,7 @@ Schedule schemas for Uzhathunai v2.0.
 
 Pydantic schemas for schedule creation and responses.
 """
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, model_validator
 from typing import Optional, Dict, Any, List
 from datetime import date, datetime
 from uuid import UUID
@@ -70,57 +70,32 @@ class ScheduleFromTemplateCreate(BaseModel):
         }
 
 
-class ScheduleFromScratchCreate(BaseModel):
-    """
-    Schema for creating schedule from scratch.
-    
-    Validates: Requirement 7.4
-    """
-    crop_id: UUID = Field(..., description="Target crop ID")
-    name: str = Field(..., min_length=1, max_length=200, description="Schedule name")
-    description: Optional[str] = Field(None, description="Schedule description")
-    start_date: Optional[date] = Field(None, description="Schedule start date (for reference)")
-    template_parameters: Optional[Dict[str, Any]] = Field(None, description="Parameters (area, plant_count) for reference")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "crop_id": "123e4567-e89b-12d3-a456-426614174000",
-                "name": "Custom Tomato Schedule",
-                "description": "Custom schedule for experimental plot"
-            }
-        }
-
-
-class ScheduleCopyRequest(BaseModel):
-    """
-    Schema for copying schedule.
-    
-    Validates: Requirement 8.3
-    """
-    target_crop_id: UUID = Field(..., description="Target crop ID")
-    new_start_date: date = Field(..., description="Start date for new schedule")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "target_crop_id": "123e4567-e89b-12d3-a456-426614174000",
-                "new_start_date": "2024-11-01"
-            }
-        }
-
-
 class ScheduleTaskCreate(BaseModel):
     """
     Schema for creating schedule task.
     
     Validates: Requirement 7.6
     """
-    task_id: UUID = Field(..., description="Task ID")
-    due_date: date = Field(..., description="Task due date")
+    task_id: Optional[UUID] = Field(None, description="Task ID (optional for manual creation)")
+    due_date: Optional[date] = Field(None, description="Task due date")
+    scheduled_date: Optional[date] = Field(None, description="Alias for due_date from frontend")
     task_details: Optional[Dict[str, Any]] = Field(None, description="Task details JSONB")
     notes: Optional[str] = Field(None, description="Task notes")
     
+    # Manual creation fields (preserved and moved to task_details by service if needed)
+    input_item_id: Optional[UUID] = Field(None, description="Input item ID for manual tasks")
+    application_method_id: Optional[UUID] = Field(None, description="Application method ID for manual tasks")
+    dosage: Optional[Dict[str, Any]] = Field(None, description="Dosage details for manual tasks")
+
+    @model_validator(mode='before')
+    @classmethod
+    def map_date_fields(cls, data: Any) -> Any:
+        """Map scheduled_date to due_date if provided."""
+        if isinstance(data, dict):
+            if data.get('scheduled_date') and not data.get('due_date'):
+                data['due_date'] = data['scheduled_date']
+        return data
+
     @validator('task_details')
     def validate_task_details(cls, v):
         """Validate task_details structure."""
@@ -202,6 +177,47 @@ class ScheduleTaskCreate(BaseModel):
                     }
                 },
                 "notes": "Apply in morning hours"
+            }
+        }
+
+
+class ScheduleFromScratchCreate(BaseModel):
+    """
+    Schema for creating schedule from scratch.
+    
+    Validates: Requirement 7.1, 7.2, 7.3, 7.4, 7.5
+    """
+    crop_id: UUID = Field(..., description="Target crop ID")
+    name: str = Field(..., min_length=1, max_length=200, description="Schedule name")
+    description: Optional[str] = Field(None, description="Schedule description")
+    start_date: Optional[date] = Field(None, description="Schedule start date (for reference)")
+    template_parameters: Optional[Dict[str, Any]] = Field(None, description="Parameters (area, plant_count) for reference")
+    items: Optional[List[ScheduleTaskCreate]] = Field(None, description="Initial tasks for the schedule")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "crop_id": "123e4567-e89b-12d3-a456-426614174000",
+                "name": "Custom Tomato Schedule",
+                "description": "Custom schedule for experimental plot"
+            }
+        }
+
+
+class ScheduleCopyRequest(BaseModel):
+    """
+    Schema for copying schedule.
+    
+    Validates: Requirement 8.3
+    """
+    target_crop_id: UUID = Field(..., description="Target crop ID")
+    new_start_date: date = Field(..., description="Start date for new schedule")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "target_crop_id": "123e4567-e89b-12d3-a456-426614174000",
+                "new_start_date": "2024-11-01"
             }
         }
 

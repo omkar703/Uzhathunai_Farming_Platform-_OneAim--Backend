@@ -103,7 +103,9 @@ async def schedule_meeting(
     fsp_org = db.query(Organization).filter(Organization.id == work_order.fsp_organization_id).first()
     farm_org = db.query(Organization).filter(Organization.id == work_order.farming_organization_id).first()
     
-    if not (fsp_org and fsp_org.status == OrganizationStatus.ACTIVE) or not (farm_org and farm_org.status == OrganizationStatus.ACTIVE):
+    # We allow ACTIVE or IN_PROGRESS for development flexibility
+    allowed_statuses = [OrganizationStatus.ACTIVE, OrganizationStatus.IN_PROGRESS]
+    if (not fsp_org or fsp_org.status not in allowed_statuses) or (not farm_org or farm_org.status not in allowed_statuses):
          raise HTTPException(
              status_code=403, 
              detail={

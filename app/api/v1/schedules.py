@@ -72,7 +72,8 @@ def create_schedule_from_scratch(
         description=data.description,
         user=current_user,
         start_date=data.start_date,
-        template_parameters=data.template_parameters
+        template_parameters=data.template_parameters,
+        items=data.items
     )
     return schedule
 
@@ -102,6 +103,8 @@ def copy_schedule(
 @router.get("", response_model=PaginatedScheduleResponse)
 def get_schedules(
     crop_id: Optional[UUID] = Query(None, description="Filter by crop ID"),
+    fsp_id: Optional[UUID] = Query(None, description="Filter by Service Partner ID"),
+    status: Optional[str] = Query(None, description="Filter by status (ACTIVE, CANCELLED)"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: User = Depends(get_current_active_user),
@@ -116,6 +119,8 @@ def get_schedules(
     schedules, total = service.get_schedules(
         user=current_user,
         crop_id=crop_id,
+        fsp_id=fsp_id,
+        status=status,
         page=page,
         limit=limit
     )
@@ -143,12 +148,13 @@ def get_schedule(
 @router.get("/tasks/upcoming", response_model=list)
 def get_upcoming_tasks(
     days_ahead: int = Query(7, ge=1, le=30),
+    crop_id: Optional[UUID] = Query(None, description="Filter by crop ID"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Get upcoming tasks from all accessible schedules."""
     service = ScheduleTaskService(db)
-    return service.get_upcoming_tasks(user=current_user, days_ahead=days_ahead)
+    return service.get_upcoming_tasks(user=current_user, days_ahead=days_ahead, crop_id=crop_id)
 
 
 @router.post("/{schedule_id}/tasks", response_model=ScheduleTaskResponse)

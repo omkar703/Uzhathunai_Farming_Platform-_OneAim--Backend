@@ -94,8 +94,8 @@ class OrganizationService:
             self._validate_organization_name(data.name, user_id)
             
             # Determine initial status
-            # All new organizations are ACTIVE by default (Auto-approved)
-            status = OrganizationStatus.ACTIVE
+            # New organizations are NOT_STARTED by default (Pending Approval)
+            status = OrganizationStatus.NOT_STARTED
             
             # Create organization
             org = Organization(
@@ -109,6 +109,7 @@ class OrganizationService:
                 pincode=data.pincode,
                 contact_email=data.contact_email,
                 contact_phone=data.contact_phone,
+                specialization=data.specialization,
                 created_by=user_id,
                 updated_by=user_id
             )
@@ -415,23 +416,43 @@ class OrganizationService:
             OrgMemberRole, 
             and_(
                 OrgMemberRole.organization_id == org_id,
-                OrgMemberRole.user_id == User.id,
-                OrgMemberRole.is_primary == True
-            )
+                OrgMemberRole.user_id == User.id
+                # Removing is_primary check to ensure we get members even if flag is missing
+                # OrgMemberRole.is_primary == True 
+            ),
+            isouter=True # Use outer join for roles in case they are missing, though OrgMember exists
         ).join(
-            Role, OrgMemberRole.role_id == Role.id
+            Role, OrgMemberRole.role_id == Role.id, isouter=True
         ).filter(
-            OrgMember.organization_id == org_id,
-            OrgMember.status == MemberStatus.ACTIVE
-        ).all()
+            OrgMember.organization_id == org_id
+        )
         
+        # Only filter by ACTIVE status if not super admin
+        if not self._is_super_admin(user_id):
+            members_query = members_query.filter(OrgMember.status == MemberStatus.ACTIVE)
+            
+        members_query = members_query.all()
+        
+        # Deduplicate members if multiple roles exist
+        seen_users = set()
         members_data = []
         for member, user, role_name in members_query:
+            if user.id in seen_users:
+                continue
+            seen_users.add(user.id)
+            
+            first_name = user.first_name or ""
+            last_name = user.last_name or ""
+            full_name = f"{first_name} {last_name}".strip() or user.email or "Unknown"
+
+            # Debug log to trace why names might be missing
+            self.logger.info(f"Member: id={user.id}, first='{first_name}', last='{last_name}', email='{user.email}', full='{full_name}'")
+
             members_data.append({
                 "user_id": str(user.id),
-                "full_name": f"{user.first_name} {user.last_name}",
+                "full_name": full_name,
                 "email": user.email,
-                "role": role_name,
+                "role": role_name if role_name else "Member", # Fallback if role missing
                 "status": member.status.value,
                 "joined_at": member.joined_at
             })
@@ -470,6 +491,9 @@ class OrganizationService:
         recent_wos = self.db.query(WorkOrder).filter(
             wo_filter
         ).order_by(desc(WorkOrder.created_at)).limit(5).all()
+
+        self.logger.info(f"Found {len(recent_wos)} work orders for org {org_id}")
+
         
         wos_data = []
         for wo in recent_wos:
@@ -521,6 +545,7 @@ class OrganizationService:
             "organization_type": org.organization_type,
             "status": org.status,
             "is_approved": org.is_approved,
+            "specialization": org.specialization,
             "registration_number": org.registration_number,
             "address": org.address,
             "district": org.district,
@@ -676,7 +701,7 @@ class OrganizationService:
                     "id": str(org.id),
                     "name": org.name,
                     "description": org.description or "",
-                    "specialization": "General Agriculture", # Default placeholder
+                    "specialization": org.specialization or "General Agriculture",
                     "rating": 4.5, # Static placeholder as requested/expected
                     "is_verified": True if org.status == OrganizationStatus.ACTIVE else False,
                     "service_count": int(service_count or 0),

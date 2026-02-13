@@ -277,7 +277,7 @@ def get_join_requests(
     description="Approve a pending organization. Only accessible by Super Admins."
 )
 async def approve_organization(
-    org_id: str,
+    org_id: UUID,
     current_user: User = Depends(get_current_super_admin),
     db: Session = Depends(get_db)
 ):
@@ -312,6 +312,7 @@ async def approve_organization(
         }
     }
 
+
 @router.post(
     "/{org_id}/reject",
     response_model=BaseResponse[dict],
@@ -320,7 +321,7 @@ async def approve_organization(
     description="Reject a pending organization. Only accessible by Super Admins."
 )
 async def reject_organization(
-    org_id: str,
+    org_id: UUID,
     current_user: User = Depends(get_current_super_admin),
     db: Session = Depends(get_db)
 ):
@@ -359,6 +360,7 @@ async def reject_organization(
         }
     }
 
+
 @router.post(
     "/{org_id}/suspend",
     response_model=BaseResponse[dict],
@@ -367,7 +369,7 @@ async def reject_organization(
     description="Suspend an active organization. Only accessible by Super Admins."
 )
 async def suspend_organization(
-    org_id: str,
+    org_id: UUID,
     current_user: User = Depends(get_current_super_admin),
     db: Session = Depends(get_db)
 ):

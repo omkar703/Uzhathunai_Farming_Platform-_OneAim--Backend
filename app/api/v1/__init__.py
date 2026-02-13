@@ -117,8 +117,9 @@ api_router.include_router(fsp_dashboard.router, prefix="/bff", tags=["BFF - Dash
 api_router.include_router(bff_marketplace.router, prefix="/bff/marketplace", tags=["BFF - Marketplace"])
 
 
-# Include video session routes
-api_router.include_router(video_zoom.router, prefix="/video", tags=["Video Consultations"])
+# Include video session routes (Jitsi Meet)
+from app.api.v1 import video_jitsi
+api_router.include_router(video_jitsi.router, prefix="/video", tags=["Video Consultations"])
 
 # Include chat routes
 api_router.include_router(chat.router, prefix="/chat", tags=["Chat"])

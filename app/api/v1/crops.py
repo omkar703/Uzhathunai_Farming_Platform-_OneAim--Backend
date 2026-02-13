@@ -57,6 +57,7 @@ def create_crop(
 def get_crops(
     plot_id: Optional[UUID] = Query(None, description="Filter by plot ID"),
     lifecycle: Optional[CropLifecycle] = Query(None, description="Filter by lifecycle stage"),
+    farming_organization_id: Optional[UUID] = Query(None, description="Filter by farming organization ID (for FSPs)"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: User = Depends(get_current_active_user),
@@ -74,8 +75,11 @@ def get_crops(
     """
     service = CropService(db)
     
-    # Get organization ID from JWT token with Smart Inference
-    org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
+    # Get organization ID from JWT token or filter
+    if farming_organization_id:
+        org_id = farming_organization_id
+    else:
+        org_id = get_organization_id(current_user, db, expected_type=OrganizationType.FARMING)
     
     # Build filters
     filters = {}

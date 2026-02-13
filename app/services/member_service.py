@@ -493,7 +493,18 @@ class MemberService:
                 exc_info=True
             )
             raise
-    
+
+    def _is_super_admin(self, user_id: UUID) -> bool:
+        """Check if user is a super admin."""
+        # Avoid circular imports
+        from app.models.organization import OrgMemberRole
+        from app.models.rbac import Role
+        
+        return self.db.query(OrgMemberRole).join(Role).filter(
+            OrgMemberRole.user_id == user_id,
+            Role.code == "SUPER_ADMIN"
+        ).first() is not None
+
     def _check_membership(self, org_id: UUID, user_id: UUID):
         """
         Check if user is a member of organization.
@@ -505,6 +516,9 @@ class MemberService:
         Raises:
             PermissionError: If user is not a member
         """
+        if self._is_super_admin(user_id):
+            return
+
         member = self.db.query(OrgMember).filter(
             OrgMember.organization_id == org_id,
             OrgMember.user_id == user_id,
@@ -517,12 +531,10 @@ class MemberService:
                 error_code="NOT_A_MEMBER",
                 details={"org_id": str(org_id)}
             )
-    
+
     def _check_admin_permission(self, org_id: UUID, user_id: UUID):
         """
         Check if user has admin permission (OWNER/ADMIN).
-        
-        Args:
             org_id: Organization ID
             user_id: User ID
         

@@ -1,5 +1,5 @@
 """
-Video Session model for Zoom integrations.
+Video Session model for Jitsi Meet integrations.
 """
 from datetime import datetime
 from sqlalchemy import Column, String, Text, DateTime, Integer, ForeignKey, Enum as SQLEnum
@@ -19,7 +19,7 @@ class VideoSessionStatus(str, enum.Enum):
 
 class VideoSession(Base):
     """
-    Video Session model to track Zoom meetings.
+    Video Session model to track Jitsi Meet video calls.
     """
     __tablename__ = "video_sessions"
 
@@ -31,14 +31,12 @@ class VideoSession(Base):
     # Link to Audit (optional, for remote audits)
     audit_id = Column(UUID(as_uuid=True), ForeignKey('audits.id', ondelete='SET NULL'), nullable=True, index=True)
     
-    # Zoom Details
-    zoom_meeting_id = Column(String(50), nullable=True, index=True)
-    join_url = Column(Text, nullable=True) # For participants
-    start_url = Column(Text, nullable=True) # For host
+    # Jitsi Details
+    room_name = Column(String(255), nullable=True, index=True)  # Jitsi room identifier
+    join_url = Column(Text, nullable=True)  # Full Jitsi room URL (same for all participants)
     topic = Column(String(255), nullable=True)
     start_time = Column(DateTime(timezone=True), nullable=True)
-    duration = Column(Integer, nullable=True) # in minutes
-    password = Column(String(50), nullable=True)
+    duration = Column(Integer, nullable=True)  # in minutes
     
     # Status
     status = Column(SQLEnum(VideoSessionStatus, name='video_session_status'), default=VideoSessionStatus.PENDING, index=True)

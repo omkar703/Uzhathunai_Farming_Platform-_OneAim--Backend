@@ -11,8 +11,9 @@ from uuid import UUID
 from decimal import Decimal
 from datetime import datetime, date
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func, extract
+from sqlalchemy import and_, or_, func, extract, cast, Integer
 from sqlalchemy.orm import joinedload
+from sqlalchemy.exc import IntegrityError
 
 from app.core.logging import get_logger
 from app.core.exceptions import NotFoundError, ValidationError, PermissionError, ConflictError
@@ -124,24 +125,60 @@ class AuditService:
             audit_date = date.today()
 
         # Create audit
-        audit = Audit(
-            fsp_organization_id=fsp_organization_id,
-            farming_organization_id=farming_organization_id,
-            work_order_id=work_order_id,
-            crop_id=crop_id,
-            template_id=template_id,
-            audit_number=audit_number,
-            name=name,
-            status=AuditStatus.PENDING if assigned_to else AuditStatus.DRAFT,
-            template_snapshot=template_snapshot,
-            audit_date=audit_date,
-            sync_status=SyncStatus.PENDING_SYNC,
-            created_by=user_id,
-            assigned_to_user_id=assigned_to
-        )
+        # Retry logic for audit_number collision (unique constraint)
+        max_retries = 3
+        retry_count = 0
+        last_error = None
 
-        self.db.add(audit)
-        self.db.flush()
+        while retry_count < max_retries:
+            try:
+                # Generate unique audit number (if it's not the first try, regenerate)
+                if retry_count > 0:
+                    audit_number = self._generate_audit_number()
+                
+                audit = Audit(
+                    fsp_organization_id=fsp_organization_id,
+                    farming_organization_id=farming_organization_id,
+                    work_order_id=work_order_id,
+                    crop_id=crop_id,
+                    template_id=template_id,
+                    audit_number=audit_number,
+                    name=name,
+                    status=AuditStatus.PENDING if assigned_to else AuditStatus.DRAFT,
+                    template_snapshot=template_snapshot,
+                    audit_date=audit_date,
+                    sync_status=SyncStatus.PENDING_SYNC,
+                    created_by=user_id,
+                    assigned_to_user_id=assigned_to
+                )
+
+                self.db.add(audit)
+                self.db.flush()
+                
+                # If flush succeeds, break the retry loop
+                break
+            except IntegrityError as e:
+                self.db.rollback()
+                retry_count += 1
+                last_error = e
+                logger.warning(
+                    "Audit number collision detected, retrying",
+                    extra={
+                        "audit_number": audit_number,
+                        "retry_count": retry_count,
+                        "error": str(e)
+                    }
+                )
+                if retry_count >= max_retries:
+                    logger.error("Max retries reached for audit creation", extra={"error": str(e)})
+                    raise ConflictError(
+                        message="Could not generate a unique audit number after multiple attempts",
+                        error_code="AUDIT_NUMBER_COLLISION",
+                        details={"audit_number": audit_number}
+                    )
+            except Exception as e:
+                self.db.rollback()
+                raise e
 
         # Create audit_parameter_instances
         self._create_parameter_instances(audit, template_snapshot, user_id)
@@ -221,6 +258,7 @@ class AuditService:
         """
         Generate unique audit number in format AUD-YYYY-NNNN.
         
+        Uses the highest existing number for the year to determine the next one.
         NNNN is a sequential number within the year, zero-padded to 4 digits.
         
         Returns:
@@ -228,30 +266,32 @@ class AuditService:
         """
         current_year = datetime.now().year
 
-        # Get the count of audits created this year
-        count = self.db.query(func.count(Audit.id)).filter(
-            extract('year', Audit.created_at) == current_year
+        # Format prefix to search for: "AUD-2026-"
+        prefix = f"AUD-{current_year}-"
+
+        # Get the highest audit number used this year
+        # We extract the last 4 characters and cast to integer for comparison
+        max_num = self.db.query(
+            func.max(cast(func.substring(Audit.audit_number, len(prefix) + 1, 4), Integer))
+        ).filter(
+            Audit.audit_number.like(f"{prefix}%")
         ).scalar()
 
-        # Generate next number (count + 1)
-        next_number = (count or 0) + 1
+        # Generate next number (max + 1)
+        next_number = (max_num or 0) + 1
 
         # Format as AUD-YYYY-NNNN
         audit_number = f"AUD-{current_year}-{next_number:04d}"
 
-        # Check if number already exists (race condition protection)
-        existing = self.db.query(Audit).filter(
-            Audit.audit_number == audit_number
-        ).first()
-
-        if existing:
-            # If exists, try next number
+        # Double check if number already exists (race condition protection)
+        # This is a fast check before attempting insertion
+        while self.db.query(Audit).filter(Audit.audit_number == audit_number).first():
             next_number += 1
             audit_number = f"AUD-{current_year}-{next_number:04d}"
 
         logger.info(
             "Audit number generated",
-            extra={"audit_number": audit_number, "year": current_year}
+            extra={"audit_number": audit_number, "year": current_year, "max_found": max_num}
         )
 
         return audit_number
