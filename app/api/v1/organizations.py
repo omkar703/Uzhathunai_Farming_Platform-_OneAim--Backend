@@ -38,6 +38,7 @@ def create_organization(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    print(f"DEBUG: Entered create_organization with user {current_user.id}", flush=True)
     """
     Create new organization.
     
