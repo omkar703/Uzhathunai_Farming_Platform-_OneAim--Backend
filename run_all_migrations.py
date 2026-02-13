@@ -3,41 +3,45 @@
 Run all pending migrations in order.
 """
 import sys
-import importlib.util
+import glob
+import os
+import subprocess
 
 def run_migration(migration_file):
-    """Load and run a migration file."""
+    """Run a migration file using subprocess."""
     print(f"\n{'='*60}")
     print(f"Running migration: {migration_file}")
     print(f"{'='*60}")
     
-    spec = importlib.util.spec_from_file_location("migration", migration_file)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # Run the migration script as a separate process
+    result = subprocess.run([sys.executable, migration_file], capture_output=True, text=True)
     
-    if hasattr(module, 'upgrade'):
-        module.upgrade()
-    else:
-        print(f"Warning: No upgrade() function found in {migration_file}")
+    if result.returncode != 0:
+        print(f"❌ Migration failed: {migration_file}")
+        print("Output:")
+        print(result.stdout)
+        print("Error:")
+        print(result.stderr)
+        return False
+        
+    print(result.stdout)
+    return True
 
 def main():
-    migrations = [
-        "migrations/006_add_work_order_completion_fields.py",
-        "migrations/007_add_schedule_task_columns.py",
-        "migrations/008_add_audit_columns.py",
-        "migrations/011_create_video_sessions_table.py",
-    ]
+    # Find all migration files
+    migration_files = glob.glob("migrations/*.py")
+    
+    # Filter out __init__.py if it exists
+    migration_files = [f for f in migration_files if not f.endswith("__init__.py")]
+    
+    # Sort files to ensure order (001, 002, etc.)
+    migration_files.sort()
     
     print("Starting database migrations...")
-    print(f"Total migrations to run: {len(migrations)}")
-
+    print(f"Found {len(migration_files)} migration files.")
     
-    for migration in migrations:
-        try:
-            run_migration(migration)
-        except Exception as e:
-            print(f"\n❌ Migration failed: {migration}")
-            print(f"Error: {e}")
+    for migration in migration_files:
+        if not run_migration(migration):
             sys.exit(1)
     
     print(f"\n{'='*60}")
