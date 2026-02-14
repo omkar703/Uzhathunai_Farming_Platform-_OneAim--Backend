@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
     
+    # Feature Flags
+    AUTO_APPROVE_ORGANIZATIONS: bool = True
+    
     # API
     API_V1_PREFIX: str = "/v1"
     API_V1_STR: str = "/api/v1"

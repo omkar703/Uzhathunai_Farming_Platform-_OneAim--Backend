@@ -8,7 +8,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@aggroconnect_db:5432/farm_db
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/farm_db
       - REDIS_URL=redis://redis:6379/0
       - ENVIRONMENT=development
     depends_on:

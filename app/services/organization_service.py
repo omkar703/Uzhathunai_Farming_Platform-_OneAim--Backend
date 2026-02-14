@@ -94,8 +94,16 @@ class OrganizationService:
             self._validate_organization_name(data.name, user_id)
             
             # Determine initial status
-            # New organizations are NOT_STARTED by default (Pending Approval)
-            status = OrganizationStatus.NOT_STARTED
+            from app.core.config import settings
+            
+            # Auto-approval check
+            if settings.AUTO_APPROVE_ORGANIZATIONS:
+                status = OrganizationStatus.ACTIVE
+                is_approved = True
+            else:
+                # New organizations are NOT_STARTED by default (Pending Approval)
+                status = OrganizationStatus.NOT_STARTED
+                is_approved = False
             
             # Create organization
             org = Organization(
