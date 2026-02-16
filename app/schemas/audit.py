@@ -73,6 +73,20 @@ class AuditAssignRequest(BaseModel):
     analyst_id: Optional[UUID] = Field(None, description="UUID of the user to assign as analyst")
 
 
+class AuditUpdate(BaseModel):
+    """Schema for updating an audit"""
+    name: Optional[str] = Field(None, min_length=1, max_length=200, description="Name for the audit")
+    audit_date: Optional[date] = Field(None, description="Audit date")
+    notes: Optional[str] = Field(None, description="Audit notes")
+
+    @validator('name')
+    def validate_name(cls, v):
+        if v is not None and not v.strip():
+            raise ValueError('Name cannot be empty')
+        return v.strip() if v else None
+
+
+
 class FSPContactInfo(BaseModel):
     """Schema for FSP contact info"""
     address: Optional[str] = None
@@ -93,6 +107,7 @@ class AuditResponse(BaseModel):
     audit_name: Optional[str] = None # Alias for frontend
     status: AuditStatusEnum
     audit_date: Optional[date] = None
+    notes: Optional[str] = None
     scheduled_date: Optional[date] = None # Alias for frontend
     sync_status: Optional[SyncStatusEnum] = None
     created_at: datetime
@@ -159,6 +174,7 @@ class ResponseSubmit(BaseModel):
     response_text: Optional[str] = Field(None, description="Text response for TEXT parameters")
     response_numeric: Optional[float] = Field(None, description="Numeric response for NUMERIC parameters")
     response_date: Optional[date] = Field(None, description="Date response for DATE parameters")
+    response_boolean: Optional[bool] = Field(None, description="Boolean response for BOOLEAN parameters")
     response_options: Optional[List[UUID]] = Field(None, description="Option IDs for SINGLE_SELECT/MULTI_SELECT parameters")
     notes: Optional[str] = Field(None, description="Additional notes")
     evidence_urls: Optional[List[str]] = Field(None, description="List of evidence photo URLs")
@@ -179,6 +195,7 @@ class ResponseUpdate(BaseModel):
     response_text: Optional[str] = Field(None, description="Text response for TEXT parameters")
     response_numeric: Optional[float] = Field(None, description="Numeric response for NUMERIC parameters")
     response_date: Optional[date] = Field(None, description="Date response for DATE parameters")
+    response_boolean: Optional[bool] = Field(None, description="Boolean response for BOOLEAN parameters")
     response_options: Optional[List[UUID]] = Field(None, description="Option IDs for SINGLE_SELECT/MULTI_SELECT parameters")
     notes: Optional[str] = Field(None, description="Additional notes")
     evidence_urls: Optional[List[str]] = Field(None, description="List of evidence photo URLs")
@@ -223,6 +240,7 @@ class AuditResponseDetail(BaseModel):
     response_text: Optional[str]
     response_numeric: Optional[float]
     response_date: Optional[date]
+    response_boolean: Optional[bool] = None
     response_options: Optional[List[UUID]]
     response_option_labels: Optional[List[str]] = None
     
@@ -313,6 +331,7 @@ class ReviewCreate(BaseModel):
     response_text: Optional[str] = Field(None, description="Text response override")
     response_numeric: Optional[float] = Field(None, description="Numeric response override")
     response_date: Optional[date] = Field(None, description="Date response override")
+    response_boolean: Optional[bool] = Field(None, description="Boolean response override")
     response_option_ids: Optional[List[UUID]] = Field(None, description="Option IDs override")
     is_flagged_for_report: bool = Field(False, description="Flag for report inclusion")
 
@@ -331,6 +350,7 @@ class ReviewUpdate(BaseModel):
     response_text: Optional[str] = Field(None, description="Text response override")
     response_numeric: Optional[float] = Field(None, description="Numeric response override")
     response_date: Optional[date] = Field(None, description="Date response override")
+    response_boolean: Optional[bool] = Field(None, description="Boolean response override")
     response_option_ids: Optional[List[UUID]] = Field(None, description="Option IDs override")
     is_flagged_for_report: Optional[bool] = Field(None, description="Flag for report inclusion")
 
@@ -342,6 +362,7 @@ class ReviewResponse(BaseModel):
     response_text: Optional[str]
     response_numeric: Optional[float]
     response_date: Optional[date]
+    response_boolean: Optional[bool] = None
     response_option_ids: Optional[List[UUID]]
     is_flagged_for_report: bool
     reviewed_at: datetime

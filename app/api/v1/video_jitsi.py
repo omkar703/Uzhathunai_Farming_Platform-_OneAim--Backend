@@ -4,14 +4,16 @@ Simplified video session management using Jitsi Meet rooms.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from uuid import UUID
-from datetime import datetime
 from pydantic import BaseModel
-from typing import Optional
+from uuid import UUID
+from datetime import datetime, timedelta
+from typing import List, Optional
+
 import hashlib
 import time
 
 from app.core.database import get_db
+from sqlalchemy import or_
 from app.core.auth import get_current_active_user as get_current_user
 from app.models.user import User
 from app.models.work_order import WorkOrder
@@ -20,6 +22,7 @@ from app.models.video_session import VideoSession, VideoSessionStatus
 from app.models.enums import OrganizationStatus
 
 router = APIRouter()
+print("Video Jitsi Module Loaded")
 
 class ScheduleMeetingRequest(BaseModel):
     work_order_id: UUID
@@ -165,26 +168,45 @@ async def schedule_meeting(
     
     # 6. Send chat notification to farmer (legacy support)
     try:
-        from app.api.v1.chat import create_channel, send_message
-        from app.schemas.chat import ChannelCreate, MessageCreate
+        from app.services.chat_service import ChatService
+        from app.schemas.chat import ChatChannelCreate, ChatMessageCreate
         
-        # Create/get channel for this work order
-        channel_data = ChannelCreate(
-            participant_org_id=work_order.farming_organization_id,
+        chat_service = ChatService(db)
+        
+        # Determine participants explicitly
+        # Both FSP and Farmer should be in the channel
+        participant_ids = [work_order.farming_organization_id, work_order.fsp_organization_id]
+        
+        # Create/get channel
+        channel_data = ChatChannelCreate(
+            participant_org_id=work_order.farming_organization_id, # Schema requires one, but we ignore it in service creation logic below
             context_type="WORK_ORDER",
-            context_id=str(work_order.id)
+            context_id=str(work_order.id),
+            name=f"Work Order {work_order.work_order_number or ''}"
         )
-        channel_response = await create_channel(channel_data, db, current_user)
         
-        if channel_response.get("success") and channel_response.get("data"):
-            channel_id = channel_response["data"].get("id") or channel_response["data"].get("channel_id")
-            
+        # Call Service directly
+        channel = chat_service.create_channel(
+            user_id=current_user.id,
+            data=channel_data,
+            participant_org_ids=participant_ids
+        )
+        
+        if channel:
             # Send VIDEO_CALL_JOIN message
-            message_data = MessageCreate(content=f"VIDEO_CALL_JOIN:{join_url}")
-            await send_message(channel_id, message_data, db, current_user)
+            message_data = ChatMessageCreate(content=f"VIDEO_CALL_JOIN:{join_url}")
+            chat_service.send_message(
+                channel_id=channel.id,
+                user_id=current_user.id,
+                data=message_data
+            )
+            print(f"[DEBUG] Chat notification sent to channel {channel.id}")
+            
     except Exception as e:
         # Non-blocking - log but don't fail the meeting creation
+        import traceback
         print(f"[WARNING] Failed to send chat notification: {e}")
+        print(traceback.format_exc())
     
     return {
         "success": True,
@@ -267,12 +289,15 @@ async def get_my_active_calls(
     
     org_ids = [org.organization_id for org in farmer_orgs]
     
-    # Find active video sessions for work orders involving these orgs
+    # Find active video sessions for work orders involving these orgs (as Farmer or FSP)
     active_sessions = db.query(VideoSession).join(
         WorkOrder, VideoSession.work_order_id == WorkOrder.id
     ).filter(
         VideoSession.status == VideoSessionStatus.ACTIVE,
-        WorkOrder.farming_organization_id.in_(org_ids)
+        or_(
+            WorkOrder.farming_organization_id.in_(org_ids),
+            WorkOrder.fsp_organization_id.in_(org_ids)
+        )
     ).all()
     
     result = []
@@ -298,3 +323,116 @@ async def get_my_active_calls(
         "error_code": None
     }
 
+@router.get("/history")
+async def get_video_history(
+    limit: int = 3,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get recent video call history for the current user.
+    Returns the last 'limit' sessions (default 3) including COMPLETED ones.
+    """
+    # Find user's organizations (Farmer or FSP)
+    user_orgs = db.query(OrgMember).filter(
+        OrgMember.user_id == current_user.id,
+        OrgMember.status == 'ACTIVE'
+    ).all()
+    
+    if not user_orgs:
+        return {
+            "success": True,
+            "message": "No history",
+            "data": [],
+            "error_code": None
+        }
+    
+    org_ids = [org.organization_id for org in user_orgs]
+    
+    # 1. ORM Query
+    # We want sessions where the WorkOrder associated with the session 
+    # belongs to one of the user's organizations (either as Farmer or FSP).
+    history_sessions = db.query(VideoSession).join(
+        WorkOrder, VideoSession.work_order_id == WorkOrder.id
+    ).filter(
+        or_(
+            WorkOrder.farming_organization_id.in_(org_ids),
+            WorkOrder.fsp_organization_id.in_(org_ids)
+        )
+    ).order_by(
+        VideoSession.created_at.desc()
+    ).limit(limit).all()
+    
+    result = []
+    for session in history_sessions:
+        wo = db.query(WorkOrder).filter(WorkOrder.id == session.work_order_id).first()
+        fsp_org = db.query(Organization).filter(Organization.id == wo.fsp_organization_id).first() if wo else None
+        farm_org = db.query(Organization).filter(Organization.id == wo.farming_organization_id).first() if wo else None
+
+        # Determine "Other Party" name
+        if wo.fsp_organization_id in org_ids:
+            other_party_name = farm_org.name if farm_org else "Farmer"
+        else:
+            other_party_name = fsp_org.name if fsp_org else "FSP"
+
+        result.append({
+            "session_id": str(session.id),
+            "status": session.status.value if hasattr(session.status, 'value') else str(session.status),
+            "topic": session.topic,
+            "join_url": session.join_url,
+            "room_name": session.room_name,
+            "start_time": session.start_time.isoformat() if session.start_time else None,
+            "end_time": (session.start_time + timedelta(minutes=session.duration)).isoformat() if session.start_time and session.duration else None,
+            "created_at": session.created_at.isoformat(),
+            "other_party_name": other_party_name,
+            "work_order_id": str(wo.id) if wo else None
+        })
+    
+    return {
+        "success": True,
+        "message": f"Found {len(result)} recent call(s)",
+        "data": result,
+        "error_code": None
+    }
+
+@router.patch("/sessions/{session_id}/end")
+async def end_session(
+    session_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    End a video session.
+    Marks the session as COMPLETED.
+    """
+    session = db.query(VideoSession).filter(VideoSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    # Permission Check
+    wo = db.query(WorkOrder).filter(WorkOrder.id == session.work_order_id).first()
+    if not wo:
+        raise HTTPException(status_code=404, detail="Work Order not found")
+        
+    # Check if user is member of either organization
+    is_member = db.query(OrgMember).filter(
+        OrgMember.user_id == current_user.id,
+        OrgMember.organization_id.in_([wo.farming_organization_id, wo.fsp_organization_id]),
+        OrgMember.status == 'ACTIVE'
+    ).first()
+    
+    if not is_member and session.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="You are not authorized to end this meeting")
+
+    # Update Status
+    session.status = VideoSessionStatus.COMPLETED
+    session.end_time = datetime.utcnow()
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Meeting ended successfully",
+        "data": None,
+        "error_code": None
+    }

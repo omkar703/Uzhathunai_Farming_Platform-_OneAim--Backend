@@ -118,6 +118,7 @@ def auth_headers(client: TestClient, test_user: User) -> dict:
     
     assert response.status_code == 200
     data = response.json()
-    access_token = data["tokens"]["access_token"]
+    # The API returns data wrapped in a data field (BaseResponse)
+    access_token = data["data"]["tokens"]["access_token"]
     
     return {"Authorization": f"Bearer {access_token}"}

@@ -119,13 +119,18 @@ class ScheduleService:
                 template_parameters
             )
         
+        # Store the creator's organization ID to determine FSP vs Farmer creation later
+        final_params = dict(template_parameters)  # Make a copy
+        if user.current_organization_id:
+            final_params['creator_organization_id'] = str(user.current_organization_id)
+        
         # Create schedule (Requirement 6.5, 6.13)
         schedule = Schedule(
             crop_id=crop_id,
             template_id=template_id,
             name=name,
             description=f"Created from template: {template.code}",
-            template_parameters=template_parameters,
+            template_parameters=final_params,
             is_active=True,
             created_by=user.id,
             updated_by=user.id
@@ -222,6 +227,10 @@ class ScheduleService:
         final_params = template_parameters or {}
         if start_date:
             final_params['start_date'] = start_date.isoformat()
+        
+        # Store the creator's organization ID to determine FSP vs Farmer creation later
+        if user.current_organization_id:
+            final_params['creator_organization_id'] = str(user.current_organization_id)
         
         # Create schedule (Requirement 7.4, 7.5)
         schedule = Schedule(
@@ -405,19 +414,28 @@ class ScheduleService:
             # 3. FSP Information
             try:
                 if schedule.creator:
-                    # A schedule is FSP-created if the creator is part of an FSP organization
-                    # We check if the creator has a member record in an FSP org
-                    from app.models.organization import Organization, OrgMember
-                    from app.models.enums import OrganizationType
+                    # Check if creator_organization_id was stored at creation time
+                    creator_org_id = None
+                    if schedule.template_parameters and isinstance(schedule.template_parameters, dict):
+                        creator_org_id = schedule.template_parameters.get('creator_organization_id')
                     
-                    creator_fsp_org = self.db.query(Organization).join(OrgMember).filter(
-                        OrgMember.user_id == schedule.creator.id,
-                        Organization.organization_type == OrganizationType.FSP
-                    ).first()
+                    # Fallback to current_organization_id if not stored (for old schedules)
+                    if not creator_org_id:
+                        creator_org_id = schedule.creator.current_organization_id
                     
-                    if creator_fsp_org:
-                        schedule.fsp_name = creator_fsp_org.name
-                        schedule.is_fsp_created = True
+                    if creator_org_id:
+                        from app.models.organization import Organization
+                        from app.models.enums import OrganizationType
+                        
+                        creator_org = self.db.query(Organization).filter(
+                            Organization.id == creator_org_id
+                        ).first()
+                        
+                        if creator_org and creator_org.organization_type == OrganizationType.FSP:
+                            schedule.fsp_name = creator_org.name
+                            schedule.is_fsp_created = True
+                        else:
+                            schedule.is_fsp_created = False
                     else:
                         schedule.is_fsp_created = False
             except Exception as e:
@@ -467,16 +485,26 @@ class ScheduleService:
 
         try:
             if schedule.creator:
-                from app.models.organization import Organization
-                from app.models.enums import OrganizationType
+                # Check if creator_organization_id was stored at creation time
+                creator_org_id = None
+                if schedule.template_parameters and isinstance(schedule.template_parameters, dict):
+                    creator_org_id = schedule.template_parameters.get('creator_organization_id')
                 
-                creator_org = self.db.query(Organization).filter(
-                    Organization.id == schedule.creator.current_organization_id
-                ).first()
+                # Fallback to current_organization_id if not stored (for old schedules)
+                if not creator_org_id:
+                    creator_org_id = schedule.creator.current_organization_id
                 
-                if creator_org:
-                    schedule.fsp_name = creator_org.name
-                    schedule.is_fsp_created = creator_org.organization_type == OrganizationType.FSP
+                if creator_org_id:
+                    from app.models.organization import Organization
+                    from app.models.enums import OrganizationType
+                    
+                    creator_org = self.db.query(Organization).filter(
+                        Organization.id == creator_org_id
+                    ).first()
+                    
+                    if creator_org:
+                        schedule.fsp_name = creator_org.name
+                        schedule.is_fsp_created = creator_org.organization_type == OrganizationType.FSP
         except Exception as e:
             logger.warning(f"Error populating FSP info for schedule {schedule.id}: {e}")
 

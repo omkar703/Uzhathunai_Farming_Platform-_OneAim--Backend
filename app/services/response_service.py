@@ -81,7 +81,7 @@ class ResponseService:
         missing_ids = set(param_instance_ids) - found_ids
         if missing_ids:
             missing_id = list(missing_ids)[0]
-            raise NotFoundError(message=f"Parameter instance {missing_id} not found")
+            raise NotFoundError(message=f"Parameter instance {missing_id} not found", error_code="PARAMETER_NOT_FOUND")
             
         # 3. Bulk fetch existing responses
         existing_responses = self.db.query(AuditResponse).filter(
@@ -105,7 +105,7 @@ class ResponseService:
             # Validate
             validation_result = self._validate_response(response_data, param_instance.parameter_snapshot)
             if not validation_result.valid:
-                raise ValidationError(message=validation_result.error)
+                raise ValidationError(message=validation_result.error, error_code="VALIDATION_ERROR")
                 
             existing_response = existing_response_map.get(response_data.audit_parameter_instance_id)
             
@@ -142,6 +142,14 @@ class ResponseService:
                 response_ids_to_return.append(new_id)
                 if response_data.evidence_urls:
                     evidence_processing_queue.append((new_id, response_data.evidence_urls))
+            
+            # Map boolean to text if needed
+            if response_data.response_boolean is not None:
+                # We do this check loosely, or we could check param type if we had efficient access
+                # For bulk, let's just assume if boolean is provided, we store in text as fallback
+                if insert_data.get("response_text") is None:
+                    insert_data["response_text"] = "true" if response_data.response_boolean else "false"
+                    print(f"DEBUG: [ResponseService] Mapped boolean {response_data.response_boolean} to text {insert_data['response_text']}", flush=True)
         
         # 5. Bulk writes
         if new_responses_data:
@@ -164,11 +172,11 @@ class ResponseService:
         """Helper to validate audit existence and status"""
         audit = self.db.query(Audit).filter(Audit.id == audit_id).first()
         if not audit:
-            raise NotFoundError(message=f"Audit {audit_id} not found")
+            raise NotFoundError(message=f"Audit {audit_id} not found", error_code="AUDIT_NOT_FOUND")
         
         # Only block if finalized or shared
         if audit.status in [AuditStatus.FINALIZED, AuditStatus.SHARED]:
-            raise PermissionError(message=f"Cannot submit responses to {audit.status.lower()} audit")
+            raise PermissionError(message=f"Cannot submit responses to {audit.status.lower()} audit", error_code="AUDIT_LOCKED")
         return audit
 
     def _process_response_internal(
@@ -184,11 +192,11 @@ class ResponseService:
         ).first()
         
         if not param_instance:
-            raise NotFoundError(message="Parameter instance not found")
+            raise NotFoundError(message="Parameter instance not found", error_code="PARAMETER_NOT_FOUND")
         
         validation_result = self._validate_response(data, param_instance.parameter_snapshot)
         if not validation_result.valid:
-            raise ValidationError(message=validation_result.error)
+            raise ValidationError(message=validation_result.error, error_code="VALIDATION_ERROR")
         
         existing_response = self.db.query(AuditResponse).filter(
             AuditResponse.audit_id == audit_id,
@@ -215,6 +223,10 @@ class ResponseService:
             notes=data.notes,
             created_by=user_id
         )
+        # WORKAROUND: Map boolean to text since column missing
+        if data.response_boolean is not None and not response.response_text:
+             response.response_text = "true" if data.response_boolean else "false"
+             
         self.db.add(response)
         self.db.flush()
         if data.evidence_urls:
@@ -235,7 +247,7 @@ class ResponseService:
         ).first()
         
         if not response:
-            raise NotFoundError(message="Response not found")
+            raise NotFoundError(message="Response not found", error_code="RESPONSE_NOT_FOUND")
         
         self._check_audit_status(audit_id)
         
@@ -254,7 +266,7 @@ class ResponseService:
         
         validation_result = self._validate_response(validation_data, param_instance.parameter_snapshot)
         if not validation_result.valid:
-            raise ValidationError(message=validation_result.error)
+            raise ValidationError(message=validation_result.error, error_code="VALIDATION_ERROR")
         
         if data.response_text is not None:
             response.response_text = data.response_text
@@ -266,6 +278,10 @@ class ResponseService:
             response.response_options = data.response_options
         if data.notes is not None:
             response.notes = data.notes
+
+        # WORKAROUND: Map boolean to text since column missing
+        if data.response_boolean is not None:
+            response.response_text = "true" if data.response_boolean else "false"
 
         if data.evidence_urls:
              self._process_evidence_urls(audit_id, response.id, data.evidence_urls, user_id)
@@ -338,6 +354,9 @@ class ResponseService:
                     res_date = review.response_date
                 if review.response_option_ids is not None:
                     res_options = review.response_option_ids
+                # Map boolean override from text if type matches
+                if param_type == 'BOOLEAN' and review.response_text:
+                    res_boolean = review.response_text.lower() == 'true'
 
             option_labels = []
             if param_type in ["SINGLE_SELECT", "MULTI_SELECT"] and res_options:
@@ -362,6 +381,7 @@ class ResponseService:
                 "response_text": res_text,
                 "response_numeric": res_numeric,
                 "response_date": res_date,
+                "response_boolean": (res_text.lower() == 'true') if param_type == 'BOOLEAN' and res_text else None, 
                 "response_options": res_options,
                 "response_option_labels": option_labels if option_labels else None,
                 "notes": response.notes,
@@ -442,6 +462,12 @@ class ResponseService:
                 for opt_id in response.response_options:
                     if opt_id not in valid_option_ids:
                         return ValidationResult(False, f"Invalid option: {opt_id}")
+            return ValidationResult(True)
+        
+        elif param_type == 'BOOLEAN':
+            return ValidationResult(True)
+            
+        elif param_type == 'PHOTO':
             return ValidationResult(True)
         
         return ValidationResult(False, f"Unknown parameter type: {param_type}")

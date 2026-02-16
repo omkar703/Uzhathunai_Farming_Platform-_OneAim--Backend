@@ -27,7 +27,6 @@ from app.api.v1 import (
     crop_photos,
     notifications,
     video_zoom,
-    video_zoom,
     marketplace,
     chat,
     farming_services
@@ -119,6 +118,7 @@ api_router.include_router(bff_marketplace.router, prefix="/bff/marketplace", tag
 
 # Include video session routes (Jitsi Meet)
 from app.api.v1 import video_jitsi
+print(f"Loading Video Jitsi Router: {video_jitsi.router}")
 api_router.include_router(video_jitsi.router, prefix="/video", tags=["Video Consultations"])
 
 # Include chat routes

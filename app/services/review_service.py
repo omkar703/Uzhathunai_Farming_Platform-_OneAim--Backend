@@ -38,6 +38,7 @@ class ReviewService:
         response_numeric: Optional[float] = None,
         response_date: Optional[datetime] = None,
         response_option_ids: Optional[list[UUID]] = None,
+        response_boolean: Optional[bool] = None,
         is_flagged_for_report: bool = False
     ) -> AuditReview:
         """
@@ -53,6 +54,7 @@ class ReviewService:
             response_numeric: Optional numeric response override
             response_date: Optional date response override
             response_option_ids: Optional option IDs override
+            response_boolean: Optional boolean response override (mapped to text)
             is_flagged_for_report: Whether to flag this response for report inclusion
             
         Returns:
@@ -101,6 +103,11 @@ class ReviewService:
             existing_review.response_numeric = response_numeric
             existing_review.response_date = response_date
             existing_review.response_option_ids = response_option_ids
+
+            # WORKAROUND: Map boolean to text
+            if response_boolean is not None:
+                existing_review.response_text = "true" if response_boolean else "false"
+
             existing_review.is_flagged_for_report = is_flagged_for_report
             existing_review.reviewed_by = user_id
             existing_review.reviewed_at = datetime.utcnow()
@@ -111,9 +118,14 @@ class ReviewService:
             return existing_review
         else:
             # Create new review
+            # WORKAROUND: Map boolean to text
+            final_text = response_text
+            if response_boolean is not None and not final_text:
+                final_text = "true" if response_boolean else "false"
+
             review = AuditReview(
                 audit_response_id=audit_response_id,
-                response_text=response_text,
+                response_text=final_text,
                 response_numeric=response_numeric,
                 response_date=response_date,
                 response_option_ids=response_option_ids,

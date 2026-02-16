@@ -64,7 +64,7 @@ class ChatChannelResponse(BaseModel):
     name: Optional[str]
     is_active: bool
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
     last_message: Optional[ChatMessageResponse] = None
     participants: List[dict] = Field(default_factory=list) # List of organization info
     

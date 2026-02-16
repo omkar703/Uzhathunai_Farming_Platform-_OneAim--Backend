@@ -44,10 +44,12 @@ class AuditReportService:
         Returns:
             Saved AuditReport
         """
+        from sqlalchemy.exc import IntegrityError
+
         # Validate audit exists
         audit = self.db.query(Audit).filter(Audit.id == audit_id).first()
         if not audit:
-            raise NotFoundError(message=f"Audit {audit_id} not found")
+            raise NotFoundError(message=f"Audit {audit_id} not found", error_code="AUDIT_NOT_FOUND")
             
         # Check permissions (basic check, more should be in API layer)
         if audit.created_by != user_id and audit.assigned_to_user_id != user_id:
@@ -55,31 +57,52 @@ class AuditReportService:
              # Assuming API layer handles "can_edit" check
              pass
 
-        # Check if report exists
-        report = self.db.query(AuditReport).filter(AuditReport.audit_id == audit_id).first()
-        
-        if report:
-            # Update existing
-            report.report_html = report_html
-            report.report_images = report_images
-            report.updated_at = datetime.utcnow()
-            # report.created_by = user_id (Track last editor? usually created_by is immutable)
-        else:
-            # Create new
-            report = AuditReport(
-                audit_id=audit_id,
-                report_html=report_html,
-                report_images=report_images,
-                created_by=user_id
-            )
-            self.db.add(report)
+        try:
+            # Check if report exists
+            report = self.db.query(AuditReport).filter(AuditReport.audit_id == audit_id).first()
             
-            # Update Audit has_report flag
-            audit.has_report = True
+            if report:
+                # Update existing
+                report.report_html = report_html
+                report.report_images = report_images
+                report.updated_at = datetime.utcnow()
+                # report.created_by = user_id (Track last editor? usually created_by is immutable)
+            else:
+                # Create new
+                report = AuditReport(
+                    audit_id=audit_id,
+                    report_html=report_html,
+                    report_images=report_images,
+                    created_by=user_id
+                )
+                self.db.add(report)
+                
+                # Update Audit has_report flag
+                audit.has_report = True
+                
+            self.db.commit()
+            self.db.refresh(report)
+            return report
             
-        self.db.commit()
-        self.db.refresh(report)
-        return report
+        except IntegrityError:
+            self.db.rollback()
+            # Race condition: Report created by another request concurrently
+            # Fetch and update
+            report = self.db.query(AuditReport).filter(AuditReport.audit_id == audit_id).first()
+            if report:
+                report.report_html = report_html
+                report.report_images = report_images
+                report.updated_at = datetime.utcnow()
+                self.db.commit()
+                self.db.refresh(report)
+                return report
+            else:
+                # Should not happen if IntegrityError was due to unique constraint on audit_id
+                raise ServiceError(message="Concurrent modification failed", error_code="CONCURRENCY_ERROR")
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Error saving report: {e}")
+            raise ServiceError(message=f"Failed to save report: {str(e)}", error_code="SAVE_REPORT_ERROR")
 
     def get_report(self, audit_id: UUID) -> AuditReport:
         """
