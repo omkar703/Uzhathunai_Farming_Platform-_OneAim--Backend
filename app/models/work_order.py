@@ -55,6 +55,7 @@ class WorkOrder(Base):
     # Payment information
     total_amount = Column(Numeric(15, 2))
     currency = Column(String(10), default='INR')
+    pricing_unit = Column(String(50)) # Added for multiple pricing options
     
     # Service snapshot
     service_snapshot = Column(JSONB)
@@ -93,6 +94,23 @@ class WorkOrder(Base):
     def farming_organization_name(self) -> Optional[str]:
         """Get farming organization name."""
         return self.farming_organization.name if self.farming_organization else None
+
+    @property
+    def pricing_unit_label(self) -> str:
+        """Get human-readable pricing unit label."""
+        if not self.pricing_unit:
+            return ""
+            
+        mapping = {
+            'PER_HOUR': 'hour',
+            'PER_DAY': 'day',
+            'PER_ACRE': 'acre',
+            'PER_YEAR': 'year',
+            'PER_CROP': 'crop',
+            'FIXED': 'fixed',
+            'CUSTOM': 'custom'
+        }
+        return mapping.get(self.pricing_unit, self.pricing_unit.lower().replace('_', ' '))
 
     @property
     def fsp_organization_name(self) -> Optional[str]:

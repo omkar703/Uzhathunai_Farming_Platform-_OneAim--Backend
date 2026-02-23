@@ -18,6 +18,7 @@ from app.models.work_order import WorkOrder, WorkOrderScope
 from app.models.enums import WorkOrderStatus, WorkOrderScopeType
 from app.schemas.farm import FarmCreate, FarmUpdate, FarmResponse, FarmSupervisorResponse
 from app.services.spatial_service import SpatialService
+from app.models.measurement_unit import MeasurementUnit
 
 logger = get_logger(__name__)
 
@@ -142,6 +143,7 @@ class FarmService:
     def get_farms(
         self,
         org_id: UUID,
+        is_active: Optional[bool] = None,
         page: int = 1,
         limit: int = 20
     ) -> Tuple[List[FarmResponse], int]:
@@ -150,6 +152,7 @@ class FarmService:
         
         Args:
             org_id: Organization ID
+            is_active: Filter by active status (optional)
             page: Page number (default: 1)
             limit: Items per page (default: 20)
             
@@ -158,23 +161,40 @@ class FarmService:
         """
         offset = (page - 1) * limit
         
+        # Build filters
+        filters = [Farm.organization_id == org_id]
+        if is_active is not None:
+            filters.append(Farm.is_active == is_active)
+        else:
+            # Default to active only if not specified? 
+            # The current behavior was hardcoded to True.
+            # To fix the filters, if None is passed (All), we show both?
+            # Or should it default to True? 
+            # The user wants "All", "Active", "Inactive".
+            # So if is_active is None, we should probably show all.
+            pass
+
         # Query farms
         query = (
             self.db.query(Farm)
-            .filter(
-                and_(
-                    Farm.organization_id == org_id,
-                    Farm.is_active == True
-                )
-            )
+            .filter(and_(*filters))
             .order_by(Farm.created_at.desc())
         )
+
         
         # Get total count
         total = query.count()
         
         # Get paginated results
-        farms = query.offset(offset).limit(limit).all()
+        farms = (
+            query
+            .options(
+                joinedload(Farm.area_unit).joinedload(MeasurementUnit.translations)
+            )
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
         
         logger.info(
             "Retrieved farms",
@@ -1003,6 +1023,24 @@ class FarmService:
                 "longitude": lon
             }
 
+        # Resolve area unit name from the relationship
+        area_unit_name = None
+        if farm.area_unit_id:
+            unit = farm.area_unit  # May be lazy-loaded
+            if unit is None:
+                # Fallback: query directly if relationship not loaded
+                unit = self.db.query(MeasurementUnit).filter(
+                    MeasurementUnit.id == farm.area_unit_id
+                ).first()
+            if unit:
+                area_unit_name = unit.display_name
+
+        # Fallback: check farm_attributes for area_unit_label (stored by frontend when UUID not available)
+        if not area_unit_name and farm.farm_attributes:
+            area_unit_name = farm.farm_attributes.get('area_unit_label')
+            if area_unit_name:
+                area_unit_name = area_unit_name.capitalize()
+
         return FarmResponse(
             id=str(farm.id),
             organization_id=str(farm.organization_id),
@@ -1018,6 +1056,7 @@ class FarmService:
             boundary=boundary_geojson,
             area=farm.area,
             area_unit_id=str(farm.area_unit_id) if farm.area_unit_id else None,
+            area_unit=area_unit_name,
             farm_attributes=farm.farm_attributes,
             manager_id=str(farm.manager_id) if farm.manager_id else None,
             water_source_ids=water_source_ids,

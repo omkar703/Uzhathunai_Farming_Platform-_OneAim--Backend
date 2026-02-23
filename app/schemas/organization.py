@@ -254,6 +254,7 @@ class MarketplaceExploreItem(BaseModel):
     logo_url: Optional[str] = None
     district: Optional[str] = None
     state: Optional[str] = None
+    address: Optional[str] = None # Added for location fallback
 
     class Config:
         from_attributes = True

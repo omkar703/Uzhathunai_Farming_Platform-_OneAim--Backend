@@ -10,7 +10,7 @@ from app.core.exceptions import NotFoundError
 from app.core.cache import cache_service
 from app.models.reference_data import Task, TaskTranslation
 from app.models.enums import TaskCategory
-from app.schemas.reference_data import TaskResponse, TaskTranslationResponse
+from app.schemas.reference_data import TaskResponse, TaskTranslationResponse, TaskCreate, TaskUpdate
 
 logger = get_logger(__name__)
 
@@ -275,3 +275,92 @@ class TaskService:
         )
         
         return result
+
+    def create_task(self, data: TaskCreate) -> TaskResponse:
+        """Create a new task."""
+        # Create task record
+        task_obj = Task(
+            code=data.code,
+            category=data.category,
+            requires_input_items=data.requires_input_items,
+            requires_concentration=data.requires_concentration,
+            requires_machinery=data.requires_machinery,
+            requires_labor=data.requires_labor,
+            sort_order=data.sort_order,
+            is_active=data.is_active
+        )
+        self.db.add(task_obj)
+        self.db.flush()  # to get task.id
+        
+        # Create translations
+        for trans_data in data.translations:
+            trans_obj = TaskTranslation(
+                task_id=task_obj.id,
+                language_code=trans_data.language_code,
+                name=trans_data.name,
+                description=trans_data.description
+            )
+            self.db.add(trans_obj)
+            
+        self.db.commit()
+        
+        # Invalidate cache
+        if hasattr(self.cache, 'delete_pattern'):
+            self.cache.delete_pattern(self.cache._get_key("tasks", "*"))
+            self.cache.delete_pattern(self.cache._get_key("task", str(task_obj.id), "*"))
+        
+        logger.info(f"Created new task {task_obj.code} ({task_obj.id})")
+        return self.get_task_by_id(task_obj.id)
+
+    def update_task(self, task_id: UUID, data: TaskUpdate) -> TaskResponse:
+        """Update an existing task."""
+        task = self.db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            raise NotFoundError(message=f"Task {task_id} not found", error_code="TASK_NOT_FOUND", details={"task_id": str(task_id)})
+            
+        update_data = data.model_dump(exclude_unset=True) if hasattr(data, 'model_dump') else data.dict(exclude_unset=True)
+        translations_data = update_data.pop("translations", None)
+        
+        # Update main record
+        for key, value in update_data.items():
+            setattr(task, key, value)
+            
+        # Update translations if provided
+        if translations_data is not None:
+            # Drop existing translations
+            self.db.query(TaskTranslation).filter(TaskTranslation.task_id == task_id).delete()
+            # Add new ones
+            for trans_data in translations_data:
+                trans_obj = TaskTranslation(
+                    task_id=task_id,
+                    language_code=trans_data["language_code"],
+                    name=trans_data["name"],
+                    description=trans_data.get("description")
+                )
+                self.db.add(trans_obj)
+                
+        self.db.commit()
+        
+        # Invalidate cache
+        if hasattr(self.cache, 'delete_pattern'):
+            self.cache.delete_pattern(self.cache._get_key("tasks", "*"))
+            self.cache.delete_pattern(self.cache._get_key("task", str(task_id), "*"))
+        
+        logger.info(f"Updated task {task.code} ({task.id})")
+        return self.get_task_by_id(task_id)
+
+    def delete_task(self, task_id: UUID) -> None:
+        """Delete a task."""
+        task = self.db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            raise NotFoundError(message=f"Task {task_id} not found", error_code="TASK_NOT_FOUND", details={"task_id": str(task_id)})
+            
+        self.db.delete(task)
+        self.db.commit()
+        
+        # Invalidate cache
+        if hasattr(self.cache, 'delete_pattern'):
+            self.cache.delete_pattern(self.cache._get_key("tasks", "*"))
+            self.cache.delete_pattern(self.cache._get_key("task", str(task_id), "*"))
+        
+        logger.info(f"Deleted task {task.code} ({task_id})")

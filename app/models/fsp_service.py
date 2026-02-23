@@ -9,7 +9,7 @@ Models match database schema exactly from 001_uzhathunai_ddl.sql:
 """
 from datetime import datetime
 from sqlalchemy import Column, String, Text, DateTime, Integer, Numeric, ForeignKey, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
@@ -102,6 +102,7 @@ class FSPServiceListing(Base):
     
     # Pricing information
     pricing_model = Column(String(50))  # PER_HOUR, PER_DAY, PER_ACRE, FIXED, CUSTOM
+    pricing_variants = Column(JSONB, default=[])  # Detailed pricing options
     base_price = Column(Numeric(15, 2))
     currency = Column(String(10), default='INR')
     
@@ -136,6 +137,23 @@ class FSPServiceListing(Base):
         """Get service description from related master service."""
         return self.service.description if self.service else None
     
+    @property
+    def pricing_unit(self) -> str:
+        """Get human-readable pricing unit based on pricing model."""
+        if not self.pricing_model:
+            return ""
+            
+        mapping = {
+            'PER_HOUR': 'hour',
+            'PER_DAY': 'day',
+            'PER_ACRE': 'acre',
+            'PER_YEAR': 'year',
+            'PER_CROP': 'crop',
+            'FIXED': 'fixed',
+            'CUSTOM': 'custom'
+        }
+        return mapping.get(self.pricing_model, self.pricing_model.lower().replace('_', ' '))
+
     def __repr__(self):
         return f"<FSPServiceListing(id={self.id}, org_id={self.fsp_organization_id}, service_id={self.service_id})>"
 

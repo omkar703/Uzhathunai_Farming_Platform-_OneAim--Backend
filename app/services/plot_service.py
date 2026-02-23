@@ -176,6 +176,7 @@ class PlotService:
                     Plot.is_active == True
                 )
             )
+            .options(joinedload(Plot.area_unit))
             .order_by(Plot.created_at.desc())
         )
         
@@ -663,6 +664,7 @@ class PlotService:
             boundary=boundary_geojson,
             area=plot.area,
             area_unit_id=str(plot.area_unit_id) if plot.area_unit_id else None,
+            area_unit=plot.area_unit.display_name if plot.area_unit else None,
             plot_attributes=plot.plot_attributes,
             water_sources=[PlotWaterSourceResponse.from_orm(ws) for ws in plot.water_sources],
             soil_types=[PlotSoilTypeResponse.from_orm(st) for st in plot.soil_types],

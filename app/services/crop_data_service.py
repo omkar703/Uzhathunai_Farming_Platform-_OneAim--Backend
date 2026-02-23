@@ -3,10 +3,14 @@ Crop Data service for managing crop categories, types, and varieties.
 """
 from typing import List, Optional, Dict, Any
 from uuid import UUID
+import re
+import uuid as uuid_mod
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.core.logging import get_logger
 from app.core.exceptions import NotFoundError
+from app.models.crop import Crop
 from app.models.crop_data import (
     CropCategory, CropCategoryTranslation,
     CropType, CropTypeTranslation,
@@ -422,3 +426,167 @@ class CropDataService:
             name=translation.name if translation else crop_type.code,
             description=translation.description if translation else None
         )
+
+    def create_custom_crop_type(self, name: str) -> CropTypeResponse:
+        """
+        Create a custom crop type under a special 'custom' category.
+        Idempotent: returns existing type if the same name (code) already exists.
+
+        Args:
+            name: Human-readable name for the crop type
+
+        Returns:
+            Created (or existing) CropTypeResponse
+        """
+        # Generate a safe code from the name
+        code = re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')
+        if len(code) > 48:
+            code = code[:48]
+        code = f"custom_{code}"
+
+        # Ensure "custom" category exists
+        custom_category = (
+            self.db.query(CropCategory)
+            .filter(CropCategory.code == "custom")
+            .first()
+        )
+        if not custom_category:
+            custom_category = CropCategory(
+                id=uuid_mod.uuid4(),
+                code="custom",
+                sort_order=9999,
+                is_active=True,
+            )
+            self.db.add(custom_category)
+            self.db.flush()
+
+            # Add English translation for the custom category
+            cat_translation = CropCategoryTranslation(
+                id=uuid_mod.uuid4(),
+                crop_category_id=custom_category.id,
+                language_code="en",
+                name="Custom",
+                description="User-defined custom crop types",
+            )
+            self.db.add(cat_translation)
+            self.db.flush()
+
+        # Check if crop type with same code already exists
+        existing = (
+            self.db.query(CropType)
+            .filter(CropType.code == code)
+            .first()
+        )
+        if existing:
+            translation = next(
+                (t for t in existing.translations if t.language_code == "en"), None
+            )
+            return CropTypeResponse(
+                id=existing.id,
+                category_id=existing.category_id,
+                code=existing.code,
+                sort_order=existing.sort_order,
+                is_active=existing.is_active,
+                name=translation.name if translation else existing.code,
+                description=None,
+            )
+
+        # Create the crop type
+        crop_type = CropType(
+            id=uuid_mod.uuid4(),
+            category_id=custom_category.id,
+            code=code,
+            sort_order=9999,
+            is_active=True,
+        )
+        self.db.add(crop_type)
+        self.db.flush()
+
+        # Add English translation
+        translation = CropTypeTranslation(
+            id=uuid_mod.uuid4(),
+            crop_type_id=crop_type.id,
+            language_code="en",
+            name=name,
+            description=None,
+        )
+        self.db.add(translation)
+        self.db.commit()
+        self.db.refresh(crop_type)
+
+        logger.info(
+            "Created custom crop type",
+            extra={"code": code, "name": name}
+        )
+
+        return CropTypeResponse(
+            id=crop_type.id,
+            category_id=crop_type.category_id,
+            code=crop_type.code,
+            sort_order=crop_type.sort_order,
+            is_active=crop_type.is_active,
+            name=name,
+            description=None,
+        )
+
+    def get_frequent_crop_types(self, org_id: UUID, limit: int = 5, language: str = "en") -> List[CropTypeResponse]:
+        """
+        Get the most frequently used crop types for an organization.
+
+        Args:
+            org_id: Organization ID (used via farms/plots/crops join)
+            limit: Max number of results (default 5)
+            language: Language code for translations
+
+        Returns:
+            List of CropTypeResponse ordered by usage frequency
+        """
+        from app.models.plot import Plot
+        from app.models.farm import Farm
+
+        # Count usage of each crop_type_id within the org's crops
+        rows = (
+            self.db.query(
+                Crop.crop_type_id,
+                func.count(Crop.id).label("usage_count")
+            )
+            .join(Plot, Crop.plot_id == Plot.id)
+            .join(Farm, Plot.farm_id == Farm.id)
+            .filter(
+                Farm.organization_id == org_id,
+                Crop.crop_type_id.isnot(None)
+            )
+            .group_by(Crop.crop_type_id)
+            .order_by(func.count(Crop.id).desc())
+            .limit(limit)
+            .all()
+        )
+
+        result = []
+        for row in rows:
+            crop_type = self.db.query(CropType).filter(CropType.id == row.crop_type_id).first()
+            if not crop_type:
+                continue
+            translation = next(
+                (t for t in crop_type.translations if t.language_code == language), None
+            )
+            if not translation:
+                translation = next(
+                    (t for t in crop_type.translations if t.language_code == "en"), None
+                )
+            result.append(CropTypeResponse(
+                id=crop_type.id,
+                category_id=crop_type.category_id,
+                code=crop_type.code,
+                sort_order=crop_type.sort_order,
+                is_active=crop_type.is_active,
+                name=translation.name if translation else crop_type.code,
+                description=translation.description if translation else None,
+            ))
+
+        logger.info(
+            "Retrieved frequent crop types",
+            extra={"org_id": str(org_id), "count": len(result)}
+        )
+        return result
+

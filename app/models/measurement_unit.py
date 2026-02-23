@@ -33,6 +33,23 @@ class MeasurementUnit(Base):
     # Relationships
     translations = relationship("MeasurementUnitTranslation", back_populates="measurement_unit", cascade="all, delete-orphan")
 
+    @property
+    def display_name(self) -> str:
+        """Get display name for the measurement unit (prefers English translation)."""
+        name = None
+        if hasattr(self, 'translations') and self.translations:
+            # Try English first
+            en_translation = next((t for t in self.translations if t.language_code == 'en'), None)
+            if en_translation:
+                name = en_translation.name
+            else:
+                # Fallback to first available translation
+                name = self.translations[0].name
+        
+        # Final fallback to symbol or code
+        result = name or self.symbol or self.code
+        return result.capitalize() if result else result
+
 
 class MeasurementUnitTranslation(Base):
     """

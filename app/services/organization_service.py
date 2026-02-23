@@ -715,7 +715,8 @@ class OrganizationService:
                     "service_count": int(service_count or 0),
                     "logo_url": org.logo_url,
                     "district": org.district,
-                    "state": org.state
+                    "state": org.state,
+                    "address": org.address
                 })
             
             self.logger.info(

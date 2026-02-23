@@ -188,4 +188,8 @@ class InputItemType(str, PyEnum):
     """Input item type enum - critical for icons/filtering"""
     FERTILIZER = "FERTILIZER"
     PESTICIDE = "PESTICIDE"
+    MACHINERY = "MACHINERY"
+    LABOUR = "LABOUR"
+    BIO_FERTILIZER = "BIO_FERTILIZER"
+    ORGANIC_FERTILIZER = "ORGANIC_FERTILIZER"
     OTHER = "OTHER"

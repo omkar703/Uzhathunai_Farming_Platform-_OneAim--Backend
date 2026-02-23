@@ -12,9 +12,17 @@ from app.models.rbac import Role
 from app.core.auth import get_current_super_admin
 from app.schemas.response import BaseResponse
 
-from app.schemas.organization import OrganizationResponse
 from typing import List, Optional
 from fastapi import Query
+from uuid import UUID
+from datetime import date
+
+from app.schemas.query import QueryListResponse, QueryStatus
+from app.schemas.schedule import PaginatedScheduleResponse
+from app.schemas.task_actual import TaskActualResponse
+from app.services.query_service import QueryService
+from app.services.schedule_service import ScheduleService
+from app.services.task_actual_service import TaskActualService
 
 router = APIRouter()
 
@@ -243,5 +251,135 @@ async def list_organizations(
             "total": total,
             "page": page,
             "limit": limit
+        }
+    }
+
+
+@router.get(
+    "/queries",
+    response_model=BaseResponse[QueryListResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List all queries",
+    description="List all queries across the platform with filtering and pagination. Only accessible by Super Admins."
+)
+async def list_all_queries(
+    farming_organization_id: Optional[UUID] = Query(None),
+    fsp_organization_id: Optional[UUID] = Query(None),
+    status: Optional[QueryStatus] = Query(None),
+    priority: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_super_admin),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    List queries with platform-wide visibility.
+    """
+    service = QueryService(db)
+    queries, total = service.get_queries(
+        farming_organization_id=farming_organization_id,
+        fsp_organization_id=fsp_organization_id,
+        status=status,
+        priority=priority,
+        page=page,
+        limit=limit
+    )
+    
+    return {
+        "success": True,
+        "message": "Queries retrieved successfully",
+        "data": {
+            "items": queries,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit
+        }
+    }
+
+
+@router.get(
+    "/schedules",
+    response_model=BaseResponse[PaginatedScheduleResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List all schedules",
+    description="List all schedules across the platform with filtering and pagination. Only accessible by Super Admins."
+)
+async def list_all_schedules(
+    crop_id: Optional[UUID] = Query(None),
+    fsp_id: Optional[UUID] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_super_admin),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    List schedules with platform-wide visibility.
+    """
+    service = ScheduleService(db)
+    schedules, total = service.get_schedules(
+        user=current_user,
+        crop_id=crop_id,
+        fsp_id=fsp_id,
+        status=status_filter,
+        page=page,
+        limit=limit
+    )
+    
+    return {
+        "success": True,
+        "message": "Schedules retrieved successfully",
+        "data": {
+            "items": schedules,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit
+        }
+    }
+
+
+@router.get(
+    "/task-actuals",
+    response_model=BaseResponse[dict],
+    status_code=status.HTTP_200_OK,
+    summary="List all task actuals",
+    description="List all task actuals across the platform with filtering and pagination. Only accessible by Super Admins."
+)
+async def list_all_task_actuals(
+    schedule_id: Optional[UUID] = Query(None),
+    crop_id: Optional[UUID] = Query(None),
+    is_planned: Optional[bool] = Query(None),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_super_admin),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    List task actuals with platform-wide visibility.
+    """
+    service = TaskActualService(db)
+    task_actuals, total = service.get_task_actuals(
+        schedule_id=schedule_id,
+        crop_id=crop_id,
+        is_planned=is_planned,
+        start_date=start_date,
+        end_date=end_date,
+        page=page,
+        limit=limit
+    )
+    
+    return {
+        "success": True,
+        "message": "Task actuals retrieved successfully",
+        "data": {
+            "items": task_actuals,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit
         }
     }

@@ -45,6 +45,24 @@ class WorkOrderScopeResponse(BaseModel):
     created_at: datetime
     created_by: Optional[str]
     
+    # Enrichment fields for frontend
+    name: Optional[str] = None
+    area: Optional[float] = None
+    area_unit: Optional[str] = None
+    location: Optional[Dict[str, Any]] = None
+    location_details: Optional[Dict[str, Any]] = None
+    water_sources: Optional[List[Any]] = None
+    irrigation_modes: Optional[List[Any]] = None
+    soil_types: Optional[List[Any]] = None
+    farming_organization_name: Optional[str] = None
+    farming_organization_id: Optional[str] = None
+    farm_name: Optional[str] = None
+    farm_id: Optional[str] = None
+    plot_name: Optional[str] = None
+    plot_id: Optional[str] = None
+    linkedPlot: Optional[Dict[str, Any]] = None
+    linkedFarm: Optional[Dict[str, Any]] = None
+    
     @validator('id', 'work_order_id', 'scope_id', 'created_by', pre=True)
     def convert_uuid_to_str(cls, v):
         """Convert UUID to string."""
@@ -71,6 +89,7 @@ class WorkOrderCreate(BaseModel):
     end_date: Optional[date] = None
     total_amount: Optional[float] = Field(None, ge=0)
     currency: str = Field(default='INR', max_length=10)
+    pricing_unit: Optional[str] = Field(None, max_length=50) # Added
     scope_items: List[WorkOrderScopeCreate] = Field(default_factory=list)
     
     @validator('title')
@@ -106,6 +125,7 @@ class WorkOrderUpdate(BaseModel):
     end_date: Optional[date] = None
     total_amount: Optional[float] = Field(None, ge=0)
     currency: Optional[str] = Field(None, max_length=10)
+    pricing_unit: Optional[str] = Field(None, max_length=50) # Added
     
     @validator('title')
     def validate_title(cls, v):
@@ -166,6 +186,8 @@ class WorkOrderResponse(BaseModel):
     end_date: Optional[date]
     total_amount: Optional[float]
     currency: str
+    pricing_unit: Optional[str] # Added
+    pricing_unit_label: Optional[str] # Added for human-readable display
     created_at: datetime
     updated_at: datetime
     created_by: Optional[str]

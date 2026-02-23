@@ -23,6 +23,8 @@ class CropCategoryResponse(BaseModel):
     code: str
     sort_order: int
     is_active: bool
+    name: Optional[str] = None
+    description: Optional[str] = None
     translations: list[CropCategoryTranslationResponse] = Field(default_factory=list)
     
     @validator('id', pre=True)
@@ -53,6 +55,8 @@ class CropTypeResponse(BaseModel):
     code: str
     sort_order: int
     is_active: bool
+    name: Optional[str] = None
+    description: Optional[str] = None
     translations: list[CropTypeTranslationResponse] = Field(default_factory=list)
     
     @validator('id', 'category_id', pre=True)
@@ -64,6 +68,17 @@ class CropTypeResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class CropTypeCreate(BaseModel):
+    """Schema for creating a custom crop type."""
+    name: str = Field(..., min_length=1, max_length=200, description="Display name of the crop type")
+    
+    @validator('name')
+    def validate_name(cls, v):
+        if not v.strip():
+            raise ValueError('Name cannot be empty')
+        return v.strip()
 
 
 class VarietyMetadata(BaseModel):

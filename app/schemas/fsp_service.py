@@ -47,6 +47,14 @@ class MasterServiceResponse(BaseModel):
         }
 
 
+
+class PricingVariant(BaseModel):
+    """Schema for pricing variant."""
+    amount: float = Field(..., gt=0)
+    unit: str = Field(..., min_length=1)
+    custom_unit: Optional[str] = None
+
+
 class FSPServiceListingCreate(BaseModel):
     """Schema for creating FSP service listing."""
     service_id: UUID
@@ -54,6 +62,7 @@ class FSPServiceListingCreate(BaseModel):
     description: Optional[str] = None
     service_area_districts: List[str] = Field(default_factory=list)
     pricing_model: Optional[str] = None  # PER_HOUR, PER_DAY, PER_ACRE, FIXED, CUSTOM
+    pricing_variants: Optional[List[PricingVariant]] = []
     base_price: Optional[float] = Field(None, ge=0)
     currency: str = Field(default='INR', max_length=10)
     
@@ -68,7 +77,7 @@ class FSPServiceListingCreate(BaseModel):
     def validate_pricing_model(cls, v):
         """Validate pricing model."""
         if v is not None:
-            valid_models = ['PER_HOUR', 'PER_DAY', 'PER_ACRE', 'FIXED', 'CUSTOM']
+            valid_models = ['PER_HOUR', 'PER_DAY', 'PER_ACRE', 'FIXED', 'CUSTOM', 'PER_YEAR', 'PER_CROP']
             if v not in valid_models:
                 raise ValueError(f'Pricing model must be one of: {", ".join(valid_models)}')
         return v
@@ -80,6 +89,7 @@ class FSPServiceListingUpdate(BaseModel):
     description: Optional[str] = None
     service_area_districts: Optional[List[str]] = None
     pricing_model: Optional[str] = None
+    pricing_variants: Optional[List[PricingVariant]] = None
     base_price: Optional[float] = Field(None, ge=0)
     currency: Optional[str] = Field(None, max_length=10)
     status: Optional[ServiceStatus] = None
@@ -95,7 +105,7 @@ class FSPServiceListingUpdate(BaseModel):
     def validate_pricing_model(cls, v):
         """Validate pricing model if provided."""
         if v is not None:
-            valid_models = ['PER_HOUR', 'PER_DAY', 'PER_ACRE', 'FIXED', 'CUSTOM']
+            valid_models = ['PER_HOUR', 'PER_DAY', 'PER_ACRE', 'FIXED', 'CUSTOM', 'PER_YEAR', 'PER_CROP']
             if v not in valid_models:
                 raise ValueError(f'Pricing model must be one of: {", ".join(valid_models)}')
         return v
@@ -110,6 +120,7 @@ class FSPServiceListingResponse(BaseModel):
     description: Optional[str]
     service_area_districts: List[str]
     pricing_model: Optional[str]
+    pricing_variants: Optional[List[PricingVariant]]
     base_price: Optional[float]
     currency: str
     status: ServiceStatus
@@ -121,6 +132,7 @@ class FSPServiceListingResponse(BaseModel):
     service_code: Optional[str]
     service_name: Optional[str]
     service_description: Optional[str]
+    pricing_unit: Optional[str]
     
     @validator('id', 'fsp_organization_id', 'service_id', 'created_by', 'updated_by', pre=True)
     def convert_uuid_to_str(cls, v):
@@ -237,7 +249,7 @@ class ServiceListingFilters(BaseModel):
     def validate_pricing_model(cls, v):
         """Validate pricing model if provided."""
         if v is not None:
-            valid_models = ['PER_HOUR', 'PER_DAY', 'PER_ACRE', 'FIXED', 'CUSTOM']
+            valid_models = ['PER_HOUR', 'PER_DAY', 'PER_ACRE', 'FIXED', 'CUSTOM', 'PER_YEAR', 'PER_CROP']
             if v not in valid_models:
                 raise ValueError(f'Pricing model must be one of: {", ".join(valid_models)}')
         return v

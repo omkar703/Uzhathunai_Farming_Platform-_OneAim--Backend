@@ -28,11 +28,11 @@ class QueryService:
     def create_query(
         self,
         farming_organization_id: UUID,
-        fsp_organization_id: UUID,
-        work_order_id: UUID,
         title: str,
         description: str,
         user_id: UUID,
+        fsp_organization_id: Optional[UUID] = None,
+        work_order_id: Optional[UUID] = None,
         farm_id: Optional[UUID] = None,
         plot_id: Optional[UUID] = None,
         crop_id: Optional[UUID] = None,
@@ -47,52 +47,54 @@ class QueryService:
         
         Requirements: 12.1, 12.2, 12.5, 12.9
         """
-        # Validate work order exists
-        work_order = self.db.query(WorkOrder).filter(
-            WorkOrder.id == work_order_id
-        ).first()
-        
-        if not work_order:
-            raise NotFoundError(
-                message=f"Work order {work_order_id} not found",
-                error_code="WORK_ORDER_NOT_FOUND",
-                details={"work_order_id": str(work_order_id)}
-            )
-        
-        # Validate work order is ACTIVE (Requirement 12.2)
-        if work_order.status != WorkOrderStatus.ACTIVE:
-            raise ValidationError(
-                message=f"Cannot create query for work order with status {work_order.status}. Work order must be ACTIVE.",
-                error_code="WORK_ORDER_NOT_ACTIVE",
-                details={
-                    "work_order_id": str(work_order_id),
-                    "work_order_status": work_order.status.value,
-                    "required_status": "ACTIVE"
-                }
-            )
-        
-        # Validate work order matches organizations
-        if work_order.farming_organization_id != farming_organization_id:
-            raise ValidationError(
-                message="Work order does not belong to farming organization",
-                error_code="WORK_ORDER_ORG_MISMATCH",
-                details={
-                    "work_order_id": str(work_order_id),
-                    "expected_farming_org": str(farming_organization_id),
-                    "actual_farming_org": str(work_order.farming_organization_id)
-                }
-            )
-        
-        if work_order.fsp_organization_id != fsp_organization_id:
-            raise ValidationError(
-                message="Work order does not belong to FSP organization",
-                error_code="WORK_ORDER_FSP_MISMATCH",
-                details={
-                    "work_order_id": str(work_order_id),
-                    "expected_fsp_org": str(fsp_organization_id),
-                    "actual_fsp_org": str(work_order.fsp_organization_id)
-                }
-            )
+        # Validate work order exists if provided
+        work_order = None
+        if work_order_id:
+            work_order = self.db.query(WorkOrder).filter(
+                WorkOrder.id == work_order_id
+            ).first()
+            
+            if not work_order:
+                raise NotFoundError(
+                    message=f"Work order {work_order_id} not found",
+                    error_code="WORK_ORDER_NOT_FOUND",
+                    details={"work_order_id": str(work_order_id)}
+                )
+            
+            # Validate work order is ACTIVE (Requirement 12.2)
+            if work_order.status != WorkOrderStatus.ACTIVE:
+                raise ValidationError(
+                    message=f"Cannot create query for work order with status {work_order.status}. Work order must be ACTIVE.",
+                    error_code="WORK_ORDER_NOT_ACTIVE",
+                    details={
+                        "work_order_id": str(work_order_id),
+                        "work_order_status": work_order.status.value,
+                        "required_status": "ACTIVE"
+                    }
+                )
+            
+            # Validate work order matches organizations
+            if work_order.farming_organization_id != farming_organization_id:
+                raise ValidationError(
+                    message="Work order does not belong to farming organization",
+                    error_code="WORK_ORDER_ORG_MISMATCH",
+                    details={
+                        "work_order_id": str(work_order_id),
+                        "expected_farming_org": str(farming_organization_id),
+                        "actual_farming_org": str(work_order.farming_organization_id)
+                    }
+                )
+            
+            if fsp_organization_id and work_order.fsp_organization_id != fsp_organization_id:
+                raise ValidationError(
+                    message="Work order does not belong to FSP organization",
+                    error_code="WORK_ORDER_FSP_MISMATCH",
+                    details={
+                        "work_order_id": str(work_order_id),
+                        "expected_fsp_org": str(fsp_organization_id),
+                        "actual_fsp_org": str(work_order.fsp_organization_id)
+                    }
+                )
         
         # Validate priority level (Requirement 12.6)
         valid_priorities = ['LOW', 'MEDIUM', 'HIGH', 'URGENT']

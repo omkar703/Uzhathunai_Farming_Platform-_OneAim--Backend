@@ -103,7 +103,6 @@ class CropService:
             description=data.description,
             crop_type_id=data.crop_type_id,
             crop_variety_id=crop_variety_id,
-            variety_name=data.variety_name if not crop_variety_id else None, # Save name if ID not found
             area=data.area,
             area_unit_id=data.area_unit_id,
             plant_count=data.plant_count,
@@ -164,6 +163,12 @@ class CropService:
             self.db.query(Crop)
             .join(Plot)
             .join(Farm)
+            .options(
+                joinedload(Crop.plot),
+                joinedload(Crop.crop_type).joinedload(CropType.translations),
+                joinedload(Crop.crop_variety).joinedload(CropVariety.translations),
+                joinedload(Crop.area_unit)
+            )
             .filter(Farm.organization_id == org_id)
         )
         
@@ -434,8 +439,7 @@ class CropService:
                 details={"crop_id": str(crop_id)}
             )
         
-        # Validate lifecycle transition
-        self.validate_lifecycle_transition(crop.lifecycle, new_lifecycle)
+        # No lifecycle transition restriction — any stage can be set freely
         
         # Update lifecycle
         old_lifecycle = crop.lifecycle
@@ -495,20 +499,7 @@ class CropService:
         Raises:
             ValidationError: If transition is invalid
         """
-        valid_transitions = LIFECYCLE_TRANSITIONS.get(current, [])
-        
-        if new not in valid_transitions:
-            valid_transitions_str = ", ".join([t.value for t in valid_transitions]) if valid_transitions else "none"
-            raise ValidationError(
-                message=f"Invalid lifecycle transition from {current.value} to {new.value}. Valid transitions: {valid_transitions_str}",
-                error_code="INVALID_LIFECYCLE_TRANSITION",
-                details={
-                    "current_lifecycle": current.value,
-                    "requested_lifecycle": new.value,
-                    "valid_transitions": [t.value for t in valid_transitions]
-                }
-            )
-        
+        # All transitions are allowed — no restrictions
         return True
     
     def get_crop_history(
@@ -687,11 +678,12 @@ class CropService:
             description=crop.description,
             crop_type_id=str(crop.crop_type_id) if crop.crop_type_id else None,
             crop_variety_id=str(crop.crop_variety_id) if crop.crop_variety_id else None,
-            variety_name=crop.variety_name,
+            variety_name=None,
             crop_type=CropTypeNested.from_orm(crop.crop_type) if crop.crop_type else None,
             crop_variety=CropVarietyNested.from_orm(crop.crop_variety) if crop.crop_variety else None,
             area=crop.area,
             area_unit_id=str(crop.area_unit_id) if crop.area_unit_id else None,
+            area_unit=crop.area_unit.display_name if crop.area_unit else None,
             plant_count=crop.plant_count,
             lifecycle=crop.lifecycle,
             planned_date=crop.planned_date,

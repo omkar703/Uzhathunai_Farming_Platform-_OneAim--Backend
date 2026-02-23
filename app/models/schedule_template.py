@@ -98,6 +98,13 @@ class ScheduleTemplate(Base):
                 
         # Fallback to first available
         return self.translations[0].description
+        
+    @property
+    def owner_type(self):
+        """Get the type of organization that owns this template."""
+        if self.owner_organization and self.owner_organization.organization_type:
+            return self.owner_organization.organization_type.value
+        return None
     
     def __repr__(self):
         return f"<ScheduleTemplate(id={self.id}, code={self.code}, is_system={self.is_system_defined})>"
@@ -152,11 +159,10 @@ class ScheduleTemplateTask(Base):
     
     # Foreign keys
     schedule_template_id = Column(UUID(as_uuid=True), ForeignKey('schedule_templates.id', ondelete='CASCADE'), nullable=False, index=True)
-    task_id = Column(UUID(as_uuid=True), ForeignKey('tasks.id'), nullable=False, index=True)
+    task_id = Column(UUID(as_uuid=True), ForeignKey('tasks.id'), nullable=True, index=True)
     
     # Task information
     day_offset = Column(Integer, nullable=False, index=True)
-    task_name = Column(String(200)) # Custom task name for the template task
     
     # Task details template (JSONB with calculation formulas)
     task_details_template = Column(JSONB, nullable=False)

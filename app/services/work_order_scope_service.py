@@ -459,13 +459,13 @@ class WorkOrderScopeService:
         work_order_id: UUID
     ) -> List[WorkOrderScope]:
         """
-        Get all scope items for a work order.
+        Get all scope items for a work order with enrichment.
         
         Args:
             work_order_id: Work order ID
         
         Returns:
-            List of scope items
+            List of enriched scope items
         """
         self.logger.info(
             "Fetching work order scope",
@@ -475,6 +475,89 @@ class WorkOrderScopeService:
         scope_items = self.db.query(WorkOrderScope).filter(
             WorkOrderScope.work_order_id == work_order_id
         ).order_by(WorkOrderScope.sort_order).all()
+
+        # Enrich with details from each resource
+        for item in scope_items:
+            try:
+                if item.scope == WorkOrderScopeType.ORGANIZATION:
+                    org = self.db.query(Organization).filter(Organization.id == item.scope_id).first()
+                    if org:
+                        item.name = org.name
+                        item.location_details = {
+                            "address": org.address,
+                            "district": org.district,
+                            "state": org.state
+                        }
+                
+                elif item.scope == WorkOrderScopeType.FARM:
+                    farm = self.db.query(Farm).filter(Farm.id == item.scope_id).first()
+                    if farm:
+                        item.name = farm.name
+                        item.area = farm.area
+                        item.area_unit = farm.area_unit.display_name if farm.area_unit else None
+                        item.location_details = {
+                            "address": farm.address,
+                            "district": farm.district,
+                            "state": farm.state
+                        }
+                        item.farming_organization_name = farm.organization.name if farm.organization else None
+                        item.farming_organization_id = str(farm.organization_id)
+                
+                elif item.scope == WorkOrderScopeType.PLOT:
+                    plot = self.db.query(Plot).filter(Plot.id == item.scope_id).first()
+                    if plot:
+                        item.name = plot.name
+                        item.area = plot.area
+                        item.area_unit = plot.area_unit.display_name if plot.area_unit else None
+                        item.farm_name = plot.farm.name if plot.farm else None
+                        item.farm_id = str(plot.farm_id)
+                        item.plot_attributes = plot.plot_attributes
+                        
+                        # Pack linkedFarm for Plot (needed for irrigation check)
+                        if plot.farm:
+                            item.linkedFarm = {
+                                "id": str(plot.farm.id),
+                                "name": plot.farm.name,
+                                "irrigation_modes": [{"name": im.reference_data.display_name or im.reference_data.code} for im in plot.farm.irrigation_modes] if plot.farm.irrigation_modes else []
+                            }
+                        
+                        # Minimal linkedPlot for frontend compatibility
+                        item.linkedPlot = {
+                            "id": str(plot.id),
+                            "name": plot.name,
+                            "area": float(plot.area) if plot.area else None,
+                            "area_unit": plot.area_unit.display_name if plot.area_unit else None
+                        }
+                
+                elif item.scope == WorkOrderScopeType.CROP:
+                    crop = self.db.query(Crop).filter(Crop.id == item.scope_id).first()
+                    if crop:
+                        item.name = crop.name
+                        item.area = crop.area
+                        item.area_unit = crop.area_unit.display_name if crop.area_unit else None
+                        item.plot_name = crop.plot.name if crop.plot else None
+                        item.plot_id = str(crop.plot_id)
+                        
+                        # Pack linkedPlot and linkedFarm
+                        if crop.plot:
+                            item.linkedPlot = {
+                                "id": str(crop.plot.id),
+                                "name": crop.plot.name,
+                                "plot_attributes": crop.plot.plot_attributes
+                            }
+                            if crop.plot.farm:
+                                item.linkedFarm = {
+                                    "id": str(crop.plot.farm.id),
+                                    "name": crop.plot.farm.name,
+                                    "irrigation_modes": [{"name": im.reference_data.display_name or im.reference_data.code} for im in crop.plot.farm.irrigation_modes] if crop.plot.farm.irrigation_modes else []
+                                }
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to enrich scope item {item.id}: {str(e)}",
+                    extra={"scope_id": str(item.id)}
+                )
+                # Continue with next item even if one fails enrichment
+                continue
         
         return scope_items
     

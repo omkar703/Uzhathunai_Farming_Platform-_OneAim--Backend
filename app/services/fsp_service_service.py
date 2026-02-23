@@ -359,6 +359,7 @@ class FSPServiceService:
                 description=data.description,
                 service_area_districts=data.service_area_districts,
                 pricing_model=data.pricing_model,
+                pricing_variants=[v.dict() for v in data.pricing_variants] if data.pricing_variants else [],
                 base_price=data.base_price,
                 status=ServiceStatus.ACTIVE,
                 created_by=user_id,
@@ -451,6 +452,9 @@ class FSPServiceService:
             # Update fields
             update_data = data.dict(exclude_unset=True)
             for field, value in update_data.items():
+                if field == 'pricing_variants' and value:
+                    # Convert Pydantic models to dicts for JSON serialization
+                    value = [v.dict() if hasattr(v, 'dict') else v for v in value]
                 setattr(service_listing, field, value)
             
             service_listing.updated_by = user_id

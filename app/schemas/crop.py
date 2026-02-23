@@ -113,6 +113,7 @@ class CropResponse(BaseModel):
     variety_name: Optional[str] = None # Added for custom variety names
     area: Optional[Decimal]
     area_unit_id: Optional[str]
+    area_unit: Optional[str] = None # Human-readable unit name
     plant_count: Optional[int]
     lifecycle: CropLifecycle
     planned_date: Optional[date]

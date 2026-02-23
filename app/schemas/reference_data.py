@@ -42,6 +42,39 @@ class TaskResponse(BaseModel):
         from_attributes = True
 
 
+class TaskTranslationCreate(BaseModel):
+    """Schema for creating a task translation."""
+    language_code: str
+    name: str
+    description: Optional[str] = None
+
+
+class TaskCreate(BaseModel):
+    """Schema for creating a new task."""
+    code: str
+    category: TaskCategory = TaskCategory.FARMING
+    requires_input_items: bool = False
+    requires_concentration: bool = False
+    requires_machinery: bool = False
+    requires_labor: bool = False
+    sort_order: int = 0
+    is_active: bool = True
+    translations: list[TaskTranslationCreate] = Field(default_factory=list)
+
+
+class TaskUpdate(BaseModel):
+    """Schema for updating an existing task."""
+    code: Optional[str] = None
+    category: Optional[TaskCategory] = None
+    requires_input_items: Optional[bool] = None
+    requires_concentration: Optional[bool] = None
+    requires_machinery: Optional[bool] = None
+    requires_labor: Optional[bool] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+    translations: Optional[list[TaskTranslationCreate]] = None
+
+
 class ReferenceDataTypeResponse(BaseModel):
     """Schema for reference data type response."""
     id: str

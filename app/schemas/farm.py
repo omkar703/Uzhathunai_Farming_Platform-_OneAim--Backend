@@ -306,6 +306,7 @@ class FarmResponse(BaseModel):
     boundary: Optional[Dict[str, Any]] = Field(None, description="Farm boundary as GeoJSON Polygon")
     area: Optional[Decimal]
     area_unit_id: Optional[str]
+    area_unit: Optional[str] = None  # Human-readable unit name (e.g., 'acres', 'hectares')
     farm_attributes: Optional[Dict[str, Any]] = Field(None, description="Farm attributes (soil EC, pH, water EC, pH, etc.)")
     manager_id: Optional[str]
     water_source_ids: List[str] = Field(default_factory=list, description="List of water source reference IDs")

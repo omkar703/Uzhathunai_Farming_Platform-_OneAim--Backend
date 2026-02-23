@@ -15,8 +15,8 @@ class QueryCreate(BaseModel):
     """Schema for creating a query."""
     
     farming_organization_id: UUID
-    fsp_organization_id: UUID
-    work_order_id: UUID
+    fsp_organization_id: Optional[UUID] = None
+    work_order_id: Optional[UUID] = None
     title: str = Field(..., min_length=1, max_length=200)
     description: str = Field(..., min_length=1)
     farm_id: Optional[UUID] = None
@@ -137,6 +137,7 @@ class QueryResponseCreate(BaseModel):
     
     response_text: str = Field(..., min_length=1)
     has_recommendation: bool = Field(default=False)
+    responder_role: Optional[str] = Field(default=None)  # 'FARMER' or 'FSP'
     
     @validator('response_text')
     def validate_not_empty(cls, v):
@@ -149,7 +150,8 @@ class QueryResponseCreate(BaseModel):
         json_schema_extra = {
             "example": {
                 "response_text": "For white fly control, I recommend using neem oil spray. Apply in the evening at 5ml per liter of water. Repeat every 7 days for 3 weeks.",
-                "has_recommendation": True
+                "has_recommendation": True,
+                "responder_role": "FSP"
             }
         }
 
@@ -161,6 +163,7 @@ class QueryResponseResponse(BaseModel):
     query_id: UUID
     response_text: str
     has_recommendation: bool
+    responder_role: Optional[str] = None  # 'FARMER' or 'FSP'
     created_at: datetime
     created_by: UUID
     photos: List[QueryPhotoResponse] = []
@@ -228,8 +231,8 @@ class QueryResponse(BaseModel):
     
     id: UUID
     farming_organization_id: UUID
-    fsp_organization_id: UUID
-    work_order_id: UUID
+    fsp_organization_id: Optional[UUID] = None
+    work_order_id: Optional[UUID] = None
     query_number: str
     title: str
     description: str

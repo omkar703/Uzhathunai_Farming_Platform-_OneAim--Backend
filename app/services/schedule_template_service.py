@@ -274,7 +274,6 @@ class ScheduleTemplateService:
                         schedule_template_id=template.id,
                         task_id=final_task_id,
                         day_offset=task_data.day_offset,
-                        task_name=task_data.task_name,
                         task_details_template=task_data.task_details_template,
                         sort_order=task_data.sort_order,
                         notes=task_data.notes,
@@ -317,6 +316,7 @@ class ScheduleTemplateService:
         crop_type_id: Optional[UUID] = None,
         crop_variety_id: Optional[UUID] = None,
         is_system_defined: Optional[bool] = None,
+        owner_type: Optional[str] = None,
         page: int = 1,
         limit: int = 20
     ) -> Tuple[List[ScheduleTemplate], int]:
@@ -326,12 +326,14 @@ class ScheduleTemplateService:
         Requirements 15.1, 15.3:
         - System-defined templates available to all organizations (read-only)
         - Organization-specific templates only shown to owner organization
+        - System Admins can globally view all templates and filter by `owner_type`
         
         Args:
             user_id: User ID
             crop_type_id: Filter by crop type
             crop_variety_id: Filter by crop variety
             is_system_defined: Filter by system/org templates
+            owner_type: Optional filter by FSP or FARMER organization type for system admins.
             page: Page number (1-indexed)
             limit: Items per page
         
@@ -344,27 +346,41 @@ class ScheduleTemplateService:
                 "user_id": str(user_id),
                 "crop_type_id": str(crop_type_id) if crop_type_id else None,
                 "is_system_defined": is_system_defined,
+                "owner_type": owner_type,
                 "page": page,
                 "limit": limit
             }
         )
         
-        # Get user's organizations
-        user_org_ids = self.db.query(OrgMemberRole.organization_id).filter(
+        # Check if user is a system user
+        system_roles = ['SUPER_ADMIN', 'BILLING_ADMIN', 'SUPPORT_AGENT']
+        user_roles = self.db.query(OrgMemberRole).join(Role).filter(
             OrgMemberRole.user_id == user_id
-        ).distinct().all()
-        user_org_ids = [org_id[0] for org_id in user_org_ids]
+        ).all()
+        is_system_user = any(mr.role.code in system_roles for mr in user_roles)
         
-        # Base query - system templates OR templates owned by user's organizations
-        query = self.db.query(ScheduleTemplate).filter(
-            ScheduleTemplate.is_active == True,
-            or_(
-                ScheduleTemplate.is_system_defined == True,
-                ScheduleTemplate.owner_org_id.in_(user_org_ids)
+        # Base query
+        query = self.db.query(ScheduleTemplate).filter(ScheduleTemplate.is_active == True)
+        
+        if is_system_user:
+            # System admins can see EVERYTHING
+            pass
+        else:
+            # Get user's organizations
+            user_org_ids = self.db.query(OrgMemberRole.organization_id).filter(
+                OrgMemberRole.user_id == user_id
+            ).distinct().all()
+            user_org_ids = [org_id[0] for org_id in user_org_ids]
+            
+            # Non-system users see system templates OR templates owned by their organizations
+            query = query.filter(
+                or_(
+                    ScheduleTemplate.is_system_defined == True,
+                    ScheduleTemplate.owner_org_id.in_(user_org_ids)
+                )
             )
-        )
         
-        # Apply filters
+        # Apply explicit filters
         if crop_type_id:
             query = query.filter(ScheduleTemplate.crop_type_id == crop_type_id)
         
@@ -373,6 +389,12 @@ class ScheduleTemplateService:
         
         if is_system_defined is not None:
             query = query.filter(ScheduleTemplate.is_system_defined == is_system_defined)
+            
+        if owner_type and is_system_user:
+            # System admins can filter by owner_type (FSP / FARMER)
+            query = query.join(
+                Organization, ScheduleTemplate.owner_org_id == Organization.id
+            ).filter(Organization.organization_type == owner_type)
         
         # Get total count
         total = query.count()
@@ -614,7 +636,6 @@ class ScheduleTemplateService:
                         schedule_template_id=template.id,
                         task_id=final_task_id,
                         day_offset=task_data.day_offset,
-                        task_name=task_data.task_name,
                         task_details_template=task_data.task_details_template,
                         sort_order=task_data.sort_order,
                         notes=task_data.notes,
@@ -917,7 +938,7 @@ class ScheduleTemplateService:
         """
         Helper to resolve task_id from task_data.
         If task_id is present AND VALID, return it.
-        If missing or invalid (e.g. input_item_id sent as task_id), infer from generic tasks.
+        If missing or invalid, try to infer from activity_type in task_details_template.
         """
         from app.models.reference_data import Task
 
@@ -928,26 +949,22 @@ class ScheduleTemplateService:
                 return task_data.task_id
             
             # If provided ID doesn't exist in tasks table, it's likely an input_item_id or garbage
-            # Log warning and fall through to inference
             self.logger.warning(
                 f"Invalid task_id {task_data.task_id} provided (not found in tasks). Falling back to inference."
             )
         
-        # Try to infer from generic tasks
+        # Try to infer from activity_type in details
+        details = task_data.task_details_template
+        if details and isinstance(details, dict) and 'activity_type' in details:
+            at = details['activity_type']
+            task = db_session.query(Task).filter(Task.code == at).first()
+            if task:
+                return task.id
         
         # Default fallback
         generic_code = "GENERAL_APPLICATION"
-        
-        # Heuristic: Check if input items are fertilizers or pesticides
-        # This is robust but simple for now
-        details = task_data.task_details_template
-        if details and 'input_items' in details and len(details['input_items']) > 0:
-            # We could fetch the input item to check category, but to save DB calls, 
-            # we default to GENERAL_APPLICATION which is safe.
-            # If we want to be smarter later, we can fetch InputItem here.
-            pass
-            
         task = db_session.query(Task).filter(Task.code == generic_code).first()
+        
         if not task:
             # Fallback to the first available farming task if generic one is missing
             self.logger.warning(f"Generic task {generic_code} not found. Trying fallback to FARMING category.")
@@ -955,20 +972,12 @@ class ScheduleTemplateService:
             
             if not task:
                 # Last resort: any task at all
-                self.logger.warning("No FARMING tasks found either. Trying fallback to ANY task.")
                 task = db_session.query(Task).first()
             
             if not task:
-                # If STILL nothing, we can't proceed. 
-                # Provide the EXACT message the user is seeing to stop the confusion if it was renamed, 
-                # or a better one if it wasn't.
                 raise ValidationError(
-                    message=f"Generic Task '{generic_code}' not found and no fallbacks available. Please contact support.",
+                    message=f"Generic Task '{generic_code}' not found and no tasks exist in DB. Please seed the database.",
                     error_code="GENERIC_TASK_NOT_FOUND"
                 )
-            
-            self.logger.warning(
-                f"Generic task {generic_code} not found. Fell back to task {task.code} ({task.id})."
-            )
             
         return task.id

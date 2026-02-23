@@ -40,7 +40,6 @@ class Audit(Base):
     status = Column(SQLEnum(AuditStatus, name='audit_status'), default=AuditStatus.DRAFT, nullable=False)
     template_snapshot = Column(JSONB, nullable=True)
     audit_date = Column(Date, nullable=True)
-    notes = Column(Text, nullable=True)
     sync_status = Column(SQLEnum(SyncStatus, name='sync_status', values_callable=lambda x: [e.value for e in x]), default=SyncStatus.PENDING_SYNC, nullable=True)  # Added in 003
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

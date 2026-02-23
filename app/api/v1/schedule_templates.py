@@ -24,12 +24,96 @@ from app.schemas.schedule_template import (
 
 router = APIRouter(prefix="/schedule-templates", tags=["Schedule Templates"])
 
+# Static activity type configuration (no DB required)
+ACTIVITY_TYPES_CONFIG = [
+    {
+        "value": "BASAL_DOSE",
+        "label": "Basal Dose Application",
+        "category": "input_based",
+        "allowed_input_categories": ["Fertilizer", "Pesticide", "Bio Fertilizer", "Organic Fertilizer", "Machinery", "Labour"],
+        "unit_rules": {
+            "Fertilizer": ["Kg", "Gram", "Bag"],
+            "Pesticide": ["Liter", "ml"],
+            "Machinery": ["Hours", "Acres"],
+            "Labour": ["Persons", "Days"],
+            "Bio Fertilizer": ["Kg", "Gram"],
+            "Organic Fertilizer": ["Kg", "Ton"],
+        },
+    },
+    {
+        "value": "BED_PREPARATION", "label": "Bed Preparation", "category": "labour",
+        "fields": ["male_labour_count", "female_labour_count", "working_days", "area_covered", "area_unit"],
+    },
+    {
+        "value": "DRENCHING", "label": "Drenching", "category": "chemical_application",
+        "fields": ["total_solution_volume", "unit", "area_covered", "area_unit"],
+        "optional_chemicals": True,
+        "allowed_input_categories": ["Fertilizer", "Pesticide"],
+    },
+    {
+        "value": "EARTHING_UP", "label": "Earthing Up", "category": "labour",
+        "fields": ["male_labour_count", "female_labour_count", "working_days", "area_covered", "area_unit"],
+    },
+    {
+        "value": "FERTIGATION", "label": "Fertigation", "category": "input_based",
+        "allowed_input_categories": ["Fertilizer", "Pesticide", "Bio Fertilizer"],
+        "unit_rules": {
+            "Fertilizer": ["Kg", "Gram", "Bag"],
+            "Pesticide": ["Liter", "ml"],
+            "Bio Fertilizer": ["Kg", "Gram"],
+        },
+    },
+    {
+        "value": "FOLIAR_SPRAY", "label": "Foliar Spray", "category": "spray",
+        "fields": ["total_solution_volume", "unit", "area_covered", "area_unit"],
+        "has_ingredients": True,
+        "allowed_input_categories": ["Fertilizer", "Pesticide", "Bio Fertilizer"],
+    },
+    {
+        "value": "HARVESTING", "label": "Harvesting", "category": "labour_machinery",
+        "fields": ["male_labour_count", "female_labour_count", "machine_used", "estimated_hours", "area_covered", "area_unit"],
+    },
+    {
+        "value": "PLOUGHING", "label": "Ploughing", "category": "machinery",
+        "fields": ["equipment_type", "quantity", "estimated_hours", "area_covered", "area_unit"],
+    },
+    {
+        "value": "SOWING", "label": "Sowing", "category": "labour",
+        "fields": ["male_labour_count", "female_labour_count", "working_days", "area_covered", "area_unit"],
+    },
+    {
+        "value": "TRANSPLANTING", "label": "Transplanting", "category": "labour",
+        "fields": ["male_labour_count", "female_labour_count", "working_days", "area_covered", "area_unit"],
+    },
+    {
+        "value": "TRELLISING", "label": "Trellising", "category": "labour",
+        "fields": ["male_labour_count", "female_labour_count", "working_days", "area_covered", "area_unit"],
+    },
+    {
+        "value": "WEEDING", "label": "Weeding", "category": "labour",
+        "fields": ["male_labour_count", "female_labour_count", "working_days", "area_covered", "area_unit"],
+    },
+]
+
+
+@router.get("/activity-types", tags=["Schedule Templates"])
+def get_activity_types(
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Get all supported activity types with their dynamic field configuration.
+    Used by the frontend to render dynamic forms for each activity type.
+    No database access required – returns static configuration.
+    """
+    return {"activity_types": ACTIVITY_TYPES_CONFIG}
+
 
 @router.get("", response_model=ScheduleTemplateListResponse)
 def get_schedule_templates(
     crop_type_id: Optional[UUID] = Query(None, description="Filter by crop type"),
     crop_variety_id: Optional[UUID] = Query(None, description="Filter by crop variety"),
     is_system_defined: Optional[bool] = Query(None, description="Filter by system/org templates"),
+    owner_type: Optional[str] = Query(None, description="Filter by FSP or FARMER organization type"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: User = Depends(get_current_active_user),
@@ -42,6 +126,7 @@ def get_schedule_templates(
     - Returns system-defined templates (read-only for all)
     - Returns org-specific templates owned by user's organizations
     - Supports filtering by crop type, variety, and system/org flag
+    - Admin users can globally filter templates by `owner_type`
     """
     service = ScheduleTemplateService(db)
     templates, total = service.get_templates(
@@ -49,6 +134,7 @@ def get_schedule_templates(
         crop_type_id=crop_type_id,
         crop_variety_id=crop_variety_id,
         is_system_defined=is_system_defined,
+        owner_type=owner_type,
         page=page,
         limit=limit
     )

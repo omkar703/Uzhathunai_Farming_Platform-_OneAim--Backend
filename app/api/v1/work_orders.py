@@ -88,6 +88,7 @@ def create_work_order(
         end_date=data.end_date,
         total_amount=data.total_amount,
         currency=data.currency,
+        pricing_unit=data.pricing_unit,
         user_id=current_user.id
     )
     

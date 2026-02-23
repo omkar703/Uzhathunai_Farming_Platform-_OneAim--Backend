@@ -195,6 +195,10 @@ def initialize_db():
         logger.info("Ensuring CONSULTANCY master service exists. Running 012_add_consultancy_master_service.sql...")
         run_sql_file(db, "012_add_consultancy_master_service.sql")
 
+        # Check 015: Machinery Master Service
+        logger.info("Ensuring MACHINERY master service exists. Running 015_add_machinery_master_service.sql...")
+        run_sql_file(db, "015_add_machinery_master_service.sql")
+
 
         # Check if Roles exist (Seed Data)
         # Using count check

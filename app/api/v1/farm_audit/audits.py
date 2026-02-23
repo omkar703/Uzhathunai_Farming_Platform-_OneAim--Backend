@@ -288,8 +288,6 @@ def update_audit(
          pass 
 
     # Update fields
-    if data.notes is not None:
-        audit.notes = data.notes
     if data.audit_date is not None:
         audit.audit_date = data.audit_date
     if data.name is not None:

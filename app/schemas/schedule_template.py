@@ -35,20 +35,10 @@ class ScheduleTemplateTranslationResponse(ScheduleTemplateTranslationBase):
 class ScheduleTemplateTaskBase(BaseModel):
     """Base schema for schedule template task."""
     task_id: Optional[UUID] = None
-    task_name: Optional[str] = Field(None, max_length=200, description="Custom task name overriding the default")
-    day_offset: int = Field(..., ge=0, description="Days from schedule start (0 = start date)")
+    day_offset: int = Field(..., description="Days from schedule start (0 = start date)")
     task_details_template: Dict[str, Any] = Field(..., description="JSONB with calculation formulas")
     sort_order: Optional[int] = Field(0, ge=0)
     notes: Optional[str] = None
-    
-    @validator('day_offset')
-    def validate_day_offset(cls, v):
-        """Validate day_offset is non-negative."""
-        if v < 0:
-            raise ValueError('day_offset must be non-negative')
-        return v
-    
-        return v
     
     @validator('task_details_template')
     def validate_task_details_template(cls, v):
@@ -204,6 +194,7 @@ class ScheduleTemplateResponse(ScheduleTemplateBase):
     translations: List[ScheduleTemplateTranslationResponse] = []
     tasks: List[ScheduleTemplateTaskResponse] = []
     duration_days: int = 0
+    owner_type: Optional[str] = None
     
     @validator('duration_days', always=True)
     def calculate_duration_days(cls, v, values):

@@ -12,8 +12,15 @@ from sqlalchemy.orm import Session
 from app.models.query import Query, QueryResponse, QueryPhoto
 from app.models.enums import QueryStatus
 from app.services.schedule_change_log_service import ScheduleChangeLogService
-from app.core.exceptions import NotFoundError, ValidationError, PermissionError
+from app.core.exceptions import NotFoundError, ValidationError, PermissionError, ServiceError
 from app.core.logging import get_logger
+from app.core.config import settings
+import os
+import io
+import boto3
+from PIL import Image
+from typing import BinaryIO
+from botocore.exceptions import ClientError
 
 logger = get_logger(__name__)
 
@@ -24,13 +31,19 @@ class QueryResponseService:
     def __init__(self, db: Session):
         self.db = db
         self.change_log_service = ScheduleChangeLogService(db)
+        self.max_file_size = 10 * 1024 * 1024  # 10MB
+        self.allowed_formats = ['JPEG', 'PNG', 'JPG']
+        self.thumbnail_size = (300, 300)
+        self.compressed_max_width = 1024
+        self.compression_quality = 70
     
     def create_response(
         self,
         query_id: UUID,
         response_text: str,
         user_id: UUID,
-        has_recommendation: bool = False
+        has_recommendation: bool = False,
+        responder_role: str = None
     ) -> QueryResponse:
         """
         Create a response to a query.
@@ -62,6 +75,7 @@ class QueryResponseService:
             query_id=query_id,
             response_text=response_text.strip(),
             has_recommendation=has_recommendation,  # Requirement 13.3
+            responder_role=responder_role,
             created_by=user_id
         )
         
@@ -92,6 +106,151 @@ class QueryResponseService:
         )
         
         return response
+    
+
+
+    def upload_response_photo(
+        self,
+        response_id: UUID,
+        file_data: BinaryIO,
+        filename: str,
+        user_id: UUID,
+        caption: Optional[str] = None
+    ) -> QueryPhoto:
+        """
+        Upload photo for query response with validation and compression.
+        """
+        # Validate response exists
+        response = self.db.query(QueryResponse).filter(
+            QueryResponse.id == response_id
+        ).first()
+        
+        if not response:
+            raise NotFoundError(
+                message=f"Query response {response_id} not found",
+                error_code="QUERY_RESPONSE_NOT_FOUND",
+                details={"response_id": str(response_id)}
+            )
+        
+        # Validate file
+        self._validate_file(file_data, filename)
+        
+        # Compress image
+        compressed_data = self._compress_image(file_data)
+        
+        # Generate file key
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        ext = os.path.splitext(filename)[1] or '.jpg'
+        file_key = f"queries/{response.query_id}/responses/{response_id}/{timestamp}{ext}"
+        
+        # Upload to storage
+        file_url = self._upload_to_storage(compressed_data, file_key)
+        
+        # Create photo record
+        photo = QueryPhoto(
+            query_response_id=response_id,
+            file_url=file_url,
+            file_key=file_key,
+            caption=caption,
+            uploaded_by=user_id
+        )
+        
+        self.db.add(photo)
+        self.db.commit()
+        self.db.refresh(photo)
+        
+        logger.info(
+            "Photo uploaded for query response",
+            extra={
+                "photo_id": str(photo.id),
+                "response_id": str(response_id),
+                "uploaded_by": str(user_id)
+            }
+        )
+        
+        return photo
+
+    def _validate_file(self, file_data: BinaryIO, filename: str) -> None:
+        """Validate file size and format."""
+        file_data.seek(0, 2)
+        file_size = file_data.tell()
+        file_data.seek(0)
+        
+        if file_size > self.max_file_size:
+            raise ValidationError(
+                message=f"File size exceeds maximum {self.max_file_size / 1024 / 1024}MB",
+                error_code="FILE_TOO_LARGE"
+            )
+        
+        try:
+            image = Image.open(file_data)
+            if image.format not in self.allowed_formats:
+                raise ValidationError(
+                    message=f"Invalid file format. Allowed: {', '.join(self.allowed_formats)}",
+                    error_code="INVALID_FILE_FORMAT"
+                )
+            file_data.seek(0)
+        except Exception as e:
+            raise ValidationError(
+                message="Invalid image file",
+                error_code="INVALID_IMAGE",
+                details={"error": str(e)}
+            )
+
+    def _compress_image(self, file_data: BinaryIO) -> bytes:
+        """Compress image."""
+        try:
+            image = Image.open(file_data)
+            if image.mode == 'RGBA':
+                background = Image.new('RGB', image.size, (255, 255, 255))
+                background.paste(image, mask=image.split()[3])
+                image = background
+            
+            if image.width > self.compressed_max_width:
+                ratio = self.compressed_max_width / image.width
+                new_height = int(image.height * ratio)
+                image = image.resize((self.compressed_max_width, new_height), Image.Resampling.LANCZOS)
+            
+            output = io.BytesIO()
+            image.save(output, format='JPEG', quality=self.compression_quality, optimize=True)
+            output.seek(0)
+            return output.read()
+        except Exception:
+            file_data.seek(0)
+            return file_data.read()
+
+    def _upload_to_storage(self, file_data: bytes, file_key: str) -> str:
+        """Upload to S3 or local."""
+        if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
+            try:
+                s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                    region_name=settings.AWS_REGION_NAME
+                )
+                s3_client.put_object(
+                    Bucket=settings.AWS_S3_BUCKET,
+                    Key=file_key,
+                    Body=file_data,
+                    ContentType='image/jpeg'
+                )
+                return f"https://{settings.AWS_S3_BUCKET}.s3.{settings.AWS_REGION_NAME}.amazonaws.com/{file_key}"
+            except ClientError as e:
+                raise ServiceError(
+                    message="Failed to upload photo to storage",
+                    error_code="STORAGE_UPLOAD_FAILED",
+                    details={"error": str(e)}
+                )
+        else:
+            # Local storage fallback
+            upload_dir = getattr(settings, 'UPLOAD_DIR', 'uploads')
+            os.makedirs(upload_dir, exist_ok=True)
+            file_path = os.path.join(upload_dir, file_key)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, 'wb') as f:
+                f.write(file_data)
+            return f"/uploads/{file_key}"
     
     def attach_photo_to_response(
         self,

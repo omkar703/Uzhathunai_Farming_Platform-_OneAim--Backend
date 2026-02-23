@@ -53,11 +53,13 @@ def create_farm(
 
 @router.get("/", response_model=BaseResponse[dict])
 def get_farms(
+    is_active: bool = Query(None, description="Filter by active status"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+
     """
     Get farms for the current user's organization with pagination.
     """
@@ -69,7 +71,8 @@ def get_farms(
     # 2. Validation
     validate_organization_type(org_id, OrganizationType.FARMING, db)
     
-    farms, total = service.get_farms(org_id, page, limit)
+    farms, total = service.get_farms(org_id, is_active, page, limit)
+
     
     return {
         "success": True,

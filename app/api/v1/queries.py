@@ -5,7 +5,8 @@ Endpoints for query management, responses, and schedule change proposals.
 """
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, Query as QueryParam
+import io
+from fastapi import APIRouter, Depends, Query as QueryParam, File, UploadFile, Form
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
@@ -182,7 +183,8 @@ def create_query_response(
         query_id=query_id,
         response_text=data.response_text,
         user_id=current_user.id,
-        has_recommendation=data.has_recommendation
+        has_recommendation=data.has_recommendation,
+        responder_role=data.responder_role
     )
     
     return response
@@ -263,9 +265,10 @@ def upload_query_photo(
 
 
 @router.post("/responses/{response_id}/photos", response_model=QueryPhotoResponse, status_code=201)
-def upload_response_photo(
+async def upload_response_photo(
     response_id: UUID,
-    data: QueryPhotoCreate,
+    file: UploadFile = File(..., description="Photo file"),
+    caption: Optional[str] = Form(None),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -276,12 +279,15 @@ def upload_response_photo(
     """
     service = QueryResponseService(db)
     
-    photo = service.attach_photo_to_response(
+    # Read file data
+    file_data = await file.read()
+    
+    photo = service.upload_response_photo(
         response_id=response_id,
-        file_url=data.file_url,
-        file_key=data.file_key,
+        file_data=io.BytesIO(file_data),
+        filename=file.filename,
         user_id=current_user.id,
-        caption=data.caption
+        caption=caption
     )
     
     return photo

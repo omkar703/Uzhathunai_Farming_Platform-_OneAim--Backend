@@ -60,7 +60,8 @@ class WorkOrderService:
         end_date: Optional[datetime],
         total_amount: Optional[float],
         currency: str,
-        user_id: UUID
+        user_id: UUID,
+        pricing_unit: Optional[str] = None
     ) -> WorkOrder:
         """
         Create new work order with scope definition.
@@ -88,7 +89,7 @@ class WorkOrderService:
         return self._create_work_order_impl(
             farming_organization_id, fsp_organization_id, title, description,
             service_listing_id, terms_and_conditions, start_date, end_date,
-            total_amount, currency, user_id
+            total_amount, currency, user_id, pricing_unit
         )
 
     def _create_work_order_impl(
@@ -103,7 +104,8 @@ class WorkOrderService:
         end_date: Optional[datetime],
         total_amount: Optional[float],
         currency: str,
-        user_id: UUID
+        user_id: UUID,
+        pricing_unit: Optional[str] = None
     ) -> WorkOrder:
         self.logger.info(
             "Creating work order",
@@ -138,6 +140,7 @@ class WorkOrderService:
                 end_date=end_date,
                 total_amount=total_amount,
                 currency=currency,
+                pricing_unit=pricing_unit,
                 service_snapshot={"name": title, "description": description},
                 created_by=user_id,
                 updated_by=user_id

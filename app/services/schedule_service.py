@@ -142,15 +142,62 @@ class ScheduleService:
         # Create schedule tasks with calculations (Requirement 6.7, 6.8, 6.9, 6.10, 6.11, 6.12)
         start_date = date.fromisoformat(template_parameters['start_date'])
         
+        # Human-readable labels for activity types
+        ACTIVITY_TYPE_LABELS = {
+            'PLOUGHING': 'Ploughing',
+            'FOLIAR_SPRAY': 'Foliar Spray',
+            'HARVESTING': 'Harvesting',
+            'FERTIGATION': 'Fertigation',
+            'BASAL_DOSE': 'Basal Dose Application',
+            'DRENCHING': 'Drenching',
+            'BED_PREPARATION': 'Bed Preparation',
+            'EARTHING_UP': 'Earthing Up',
+            'IRRIGATION': 'Irrigation',
+            'WEEDING': 'Weeding',
+            'PRUNING': 'Pruning',
+            'THINNING': 'Thinning',
+            'TRANSPLANTING': 'Transplanting',
+            'SOWING': 'Sowing',
+            'GENERAL_FARMING': 'General Farming',
+        }
+        
         for template_task in template_tasks:
             # Calculate due date (Requirement 6.7)
             due_date = start_date + timedelta(days=template_task.day_offset)
             
+            tdt = template_task.task_details_template or {}
+            
             # Calculate task quantities (Requirement 6.8, 6.9, 6.10, 6.11)
             task_details = self.calculation_service.calculate_task_quantities(
-                template_task.task_details_template,
+                tdt,
                 template_parameters
             )
+            
+            # CRITICAL FIX: If calculation returns empty (e.g. for Ploughing/Harvesting
+            # which have custom fields like equipment_type, estimated_hours instead of input_items),
+            # store the raw template details so the frontend can display them properly.
+            if not task_details and tdt:
+                task_details = dict(tdt)  # Store raw template details as a copy
+            
+            # Determine task name. Priority:
+            # 1. Explicitly set task_name in template details (injected by frontend add.tsx)
+            # 2. Map from activity_type in template details
+            # 3. Linked task ORM name (fallback, often generic like "Ploughing" for all)
+            # 4. Hardcoded fallback
+            task_name = None
+            if tdt.get('task_name'):
+                task_name = tdt['task_name']
+            elif tdt.get('activity_type') and tdt['activity_type'] in ACTIVITY_TYPE_LABELS:
+                task_name = ACTIVITY_TYPE_LABELS[tdt['activity_type']]
+            elif tdt.get('activity_type'):
+                # Unknown activity type: convert SNAKE_CASE to Title Case
+                task_name = tdt['activity_type'].replace('_', ' ').title()
+            
+            if not task_name:
+                if template_task.task:
+                    task_name = template_task.task.name
+                else:
+                    task_name = "Scheduled Task"
             
             # Create schedule task (Requirement 6.12)
             schedule_task = ScheduleTask(
@@ -158,7 +205,7 @@ class ScheduleService:
                 task_id=template_task.task_id,
                 due_date=due_date,
                 status=TaskStatus.NOT_STARTED,
-                task_name=template_task.task_name,
+                task_name=task_name,
                 task_details=task_details,
                 notes=template_task.notes,
                 created_by=user.id,
@@ -249,6 +296,20 @@ class ScheduleService:
         
         # Add tasks if provided
         if items:
+            # Human-readable labels for from-scratch activity types
+            SCRATCH_ACTIVITY_LABELS = {
+                'PLOUGHING': 'Ploughing', 'FOLIAR_SPRAY': 'Foliar Spray',
+                'HARVESTING': 'Harvesting', 'FERTIGATION': 'Fertigation',
+                'BASAL_DOSE': 'Basal Dose Application', 'DRENCHING': 'Drenching',
+                'BED_PREPARATION': 'Bed Preparation', 'EARTHING_UP': 'Earthing Up',
+                'IRRIGATION': 'Irrigation', 'WEEDING': 'Weeding',
+                'PRUNING': 'Pruning', 'THINNING': 'Thinning',
+                'TRANSPLANTING': 'Transplanting', 'SOWING': 'Sowing',
+                'TRELLISING': 'Trellising', 'INTERCULTIVATION': 'Intercultivation',
+                'NURSERY_PREPARATION': 'Nursery Preparation',
+                'GENERAL_FARMING': 'General Farming',
+            }
+
             for item in items:
                 # Consolidate task_details from top-level fields if needed
                 td = item.task_details or {}
@@ -258,33 +319,45 @@ class ScheduleService:
                     td['application_method_id'] = str(item.application_method_id)
                 if item.dosage:
                     td['dosage'] = item.dosage
-                
-                # If task_id is missing, try to map from input item
+
+                # Determine task_id from activity_type (in task_details) or input_item fallback
+                activity_type = td.get('activity_type')
                 task_id = item.task_id
-                if not task_id and td:
-                    input_item_id = td.get('input_item_id')
-                    if input_item_id:
-                        input_item = self.db.query(InputItem).filter(InputItem.id == input_item_id).first()
-                        if input_item:
-                            target_code = 'GENERAL_FARMING' # Default fallback
-                            if input_item.type == 'FERTILIZER':
-                                target_code = 'FERTIGATION'
-                            elif input_item.type == 'PESTICIDE':
-                                target_code = 'FOLIAR_SPRAY'
-                            
-                            mapped_task = self.db.query(Task).filter(Task.code == target_code).first()
-                            if mapped_task:
-                                task_id = mapped_task.id
-                
+
+                if not task_id and activity_type:
+                    # Map activity_type → Task by code directly
+                    mapped_task = self.db.query(Task).filter(Task.code == activity_type).first()
+                    if mapped_task:
+                        task_id = mapped_task.id
+
+                if not task_id and td.get('input_item_id'):
+                    input_item = self.db.query(InputItem).filter(InputItem.id == td['input_item_id']).first()
+                    if input_item:
+                        target_code = 'GENERAL_FARMING'
+                        if input_item.type == 'FERTILIZER':
+                            target_code = 'FERTIGATION'
+                        elif input_item.type == 'PESTICIDE':
+                            target_code = 'FOLIAR_SPRAY'
+                        mapped_task = self.db.query(Task).filter(Task.code == target_code).first()
+                        if mapped_task:
+                            task_id = mapped_task.id
+
                 if not task_id:
+                    # Last resort: any task (won't affect display since task_name is set below)
                     fallback_task = self.db.query(Task).order_by(Task.sort_order).first()
                     if fallback_task:
                         task_id = fallback_task.id
+
+                # Determine task_name from activity_type label
+                task_name = None
+                if activity_type:
+                    task_name = SCRATCH_ACTIVITY_LABELS.get(activity_type) or activity_type.replace('_', ' ').title()
 
                 # Create schedule task
                 schedule_task = ScheduleTask(
                     schedule_id=schedule.id,
                     task_id=task_id,
+                    task_name=task_name,
                     due_date=item.due_date or start_date or date.today(),
                     status=TaskStatus.NOT_STARTED.value,
                     task_details=td,
@@ -293,6 +366,7 @@ class ScheduleService:
                     updated_by=user.id
                 )
                 self.db.add(schedule_task)
+
 
         self.db.commit()
         self.db.refresh(schedule)
@@ -586,6 +660,10 @@ class ScheduleService:
                 else:
                     task.task_name = "Generic Task"
             
+            # CRITICAL FIX: Assign the calculated/fetched details back to the task object
+            # This ensures the frontend receives the full details (machinery, labour, etc.)
+            task.task_details = details
+            
             # Data structure to hold extraction results
             extracted = {
                  'input_item_id': None,
@@ -711,7 +789,16 @@ class ScheduleService:
                      task.application_method_name = task.task_details['application_method_name']
                 else:
                      # Strict validation fallback
-                     task.application_method_name = "Manual Application" # Safe default
+                     # Only default to "Manual Application" if strictly needed.
+                     # Avoid for Machinery tasks to prevent "Ploughing - Manual Application" confusion.
+                     is_machinery = False
+                     if task.task_details and 'activity_type' in task.task_details:
+                         atype = task.task_details['activity_type']
+                         if atype in ['PLOUGHING', 'HARVESTING', 'MACHINERY']:
+                             is_machinery = True
+                     
+                     if not is_machinery:
+                        task.application_method_name = "Manual Application"
                 
                 # C. Dosage & Total Quantity Calculation
                 # Structure: { amount: float, unit: str, per: str }

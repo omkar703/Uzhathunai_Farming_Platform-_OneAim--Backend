@@ -223,6 +223,7 @@ class PlotResponse(BaseModel):
     boundary: Optional[Dict[str, Any]] = Field(None, description="Plot boundary as GeoJSON Polygon")
     area: Optional[Decimal]
     area_unit_id: Optional[str]
+    area_unit: Optional[str] = None # Human-readable unit name (e.g., 'acres', 'hectares')
     plot_attributes: Optional[Dict[str, Any]] = Field(None, description="Plot attributes (soil EC, pH, water EC, pH, etc.)")
     soil_texture: Optional[str] = Field(None, description="Soil texture from attributes")
     topography: Optional[str] = Field(None, description="Topography from attributes")
@@ -243,14 +244,16 @@ class PlotResponse(BaseModel):
         return v
     
     @model_validator(mode='after')
-    def populate_attributes(self):
-        """Populate soil_texture and topography from plot_attributes if available."""
+    def populate_attributes_and_unit(self):
+        """Populate soil_texture, topography, and area_unit_symbol."""
+        # Plot Attributes
         attrs = self.plot_attributes
         if attrs and isinstance(attrs, dict):
             if not self.soil_texture:
                 self.soil_texture = attrs.get('soil_texture')
             if not self.topography:
                 self.topography = attrs.get('topography') or attrs.get('slope')
+        
         return self
     
     class Config:
