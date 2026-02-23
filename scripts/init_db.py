@@ -195,9 +195,47 @@ def initialize_db():
         logger.info("Ensuring CONSULTANCY master service exists. Running 012_add_consultancy_master_service.sql...")
         run_sql_file(db, "012_add_consultancy_master_service.sql")
 
+        # Check 013: Video Sessions
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'video_sessions')"
+        ))
+        if not result.scalar():
+            logger.info("Missing video_sessions table. Running 013_create_video_sessions.sql...")
+            run_sql_file(db, "013_create_video_sessions.sql")
+
+        # Check 014: Pricing Unit in Work Orders
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name='work_orders' AND column_name='pricing_unit')"
+        ))
+        if not result.scalar():
+            logger.info("Missing pricing_unit column. Running 014_add_pricing_unit_to_work_orders.sql...")
+            run_sql_file(db, "014_add_pricing_unit_to_work_orders.sql")
+
         # Check 015: Machinery Master Service
         logger.info("Ensuring MACHINERY master service exists. Running 015_add_machinery_master_service.sql...")
         run_sql_file(db, "015_add_machinery_master_service.sql")
+
+        # Fix Audit Photos Schema (v2)
+        # Check for is_flagged_for_report column
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name='audit_response_photos' AND column_name='is_flagged_for_report')"
+        ))
+        if not result.scalar():
+            logger.info("Fixing audit photos schema. Running fix_audit_photos_schema_v2.sql...")
+            run_sql_file(db, "fix_audit_photos_schema_v2.sql")
+
+        # Fix Missing Audit Tables
+        # Check for audit_report_templates table
+        result = db.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'audit_report_templates')"
+        ))
+        if not result.scalar():
+            logger.info("Fixing missing audit tables. Running fix_missing_audit_tables.sql...")
+            run_sql_file(db, "fix_missing_audit_tables.sql")
+
+        # Update Input Item Type Enum
+        logger.info("Updating input item type if needed. Running update_input_item_type.sql...")
+        run_sql_file(db, "update_input_item_type.sql")
 
 
         # Check if Roles exist (Seed Data)
