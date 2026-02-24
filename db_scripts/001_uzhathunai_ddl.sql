@@ -1047,6 +1047,7 @@ CREATE TABLE fsp_service_listings (
     description TEXT,
     service_area_districts TEXT[], -- Array of districts
     pricing_model VARCHAR(50), -- PER_HOUR, PER_DAY, PER_ACRE, FIXED, CUSTOM
+    pricing_variants JSONB, -- stores custom variants
     base_price DECIMAL(15, 2),
     currency VARCHAR(10) DEFAULT 'INR',
     status service_status DEFAULT 'ACTIVE',
