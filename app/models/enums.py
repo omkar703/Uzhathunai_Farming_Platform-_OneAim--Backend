@@ -184,6 +184,7 @@ class MessageType(str, PyEnum):
     SYSTEM = "SYSTEM"
 
 
+
 class InputItemType(str, PyEnum):
     """Input item type enum - critical for icons/filtering"""
     FERTILIZER = "FERTILIZER"
@@ -193,3 +194,13 @@ class InputItemType(str, PyEnum):
     BIO_FERTILIZER = "BIO_FERTILIZER"
     ORGANIC_FERTILIZER = "ORGANIC_FERTILIZER"
     OTHER = "OTHER"
+
+
+class NotificationType(str, PyEnum):
+    """Notification type enum - matches DDL line 31"""
+    INFO = "INFO"
+    SUCCESS = "SUCCESS"
+    WARNING = "WARNING"
+    ALERT = "ALERT"
+    REMINDER = "REMINDER"
+    ERROR = "ERROR"

@@ -79,6 +79,20 @@ async def schedule_meeting(
     # Using Jitsi Meet public server - users may need to click "Join in browser"
     join_url = f"https://meet.jit.si/{room_name}"
     
+    # --- Cleanup: Mark any existing active sessions for this work order as COMPLETED ---
+    try:
+        existing_active = db.query(VideoSession).filter(
+            VideoSession.work_order_id == request.work_order_id,
+            VideoSession.status == VideoSessionStatus.ACTIVE
+        ).all()
+        for session in existing_active:
+            session.status = VideoSessionStatus.COMPLETED
+        if existing_active:
+            db.commit()
+            print(f"[DEBUG] Cleaned up {len(existing_active)} stale active sessions for WO {request.work_order_id}")
+    except Exception as cleanup_err:
+        print(f"[WARNING] Failed to cleanup stale sessions: {cleanup_err}")
+    
     # 4. Create ACTIVE Session (no background processing needed)
     video_session = VideoSession(
         work_order_id=request.work_order_id,
@@ -143,9 +157,13 @@ async def schedule_meeting(
             print(f"[DEBUG] Creating notification for user: {member.user_id}")
             notification = Notification(
                 user_id=member.user_id,
+                organization_id=recipient_org_id,
+                notification_type='ALERT',
                 type='VIDEO_CALL',
                 title='Video Call Invitation',
                 message=f'{caller_name} has started a video consultation. Join now!',
+                reference_type='WORK_ORDER',
+                reference_id=work_order.id,
                 data={
                     'session_id': str(video_session.id),
                     'join_url': join_url,
@@ -298,7 +316,7 @@ async def get_my_active_calls(
             WorkOrder.farming_organization_id.in_(org_ids),
             WorkOrder.fsp_organization_id.in_(org_ids)
         )
-    ).all()
+    ).order_by(VideoSession.created_at.desc()).all()
     
     result = []
     for session in active_sessions:
@@ -312,7 +330,8 @@ async def get_my_active_calls(
             "room_name": session.room_name,
             "start_time": session.start_time.isoformat() if session.start_time else None,
             "created_at": session.created_at.isoformat(),
-            "fsp_name": fsp_org.name if fsp_org else "FSP",
+            "fsp_organization_name": fsp_org.name if fsp_org else "FSP",
+            "fsp_organization_id": str(fsp_org.id) if fsp_org else None,
             "work_order_id": str(wo.id) if wo else None
         })
     
@@ -385,6 +404,10 @@ async def get_video_history(
             "end_time": (session.start_time + timedelta(minutes=session.duration)).isoformat() if session.start_time and session.duration else None,
             "created_at": session.created_at.isoformat(),
             "other_party_name": other_party_name,
+            "fsp_organization_name": fsp_org.name if fsp_org else "FSP",
+            "fsp_organization_id": str(fsp_org.id) if fsp_org else None,
+            "farming_organization_name": farm_org.name if farm_org else "Farmer",
+            "farming_organization_id": str(farm_org.id) if farm_org else None,
             "work_order_id": str(wo.id) if wo else None
         })
     
@@ -424,11 +447,19 @@ async def end_session(
     if not is_member and session.created_by != current_user.id:
         raise HTTPException(status_code=403, detail="You are not authorized to end this meeting")
 
-    # Update Status
-    session.status = VideoSessionStatus.COMPLETED
-    session.end_time = datetime.utcnow()
-    
-    db.commit()
+    # Update Status + Cleanup ALL active sessions for this work order to ensure UI clears
+    try:
+        all_active = db.query(VideoSession).filter(
+            VideoSession.work_order_id == session.work_order_id,
+            VideoSession.status == VideoSessionStatus.ACTIVE
+        ).all()
+        for s in all_active:
+            s.status = VideoSessionStatus.COMPLETED
+        db.commit()
+    except Exception as e:
+        # Fallback to ending just this one if something fails
+        session.status = VideoSessionStatus.COMPLETED
+        db.commit()
     
     return {
         "success": True,

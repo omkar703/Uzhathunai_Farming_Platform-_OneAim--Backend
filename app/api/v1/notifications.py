@@ -46,9 +46,13 @@ def get_notifications(
     for notif in notifications:
         result.append({
             "id": str(notif.id),
+            "organization_id": str(notif.organization_id) if notif.organization_id else None,
+            "notification_type": notif.notification_type,
             "type": notif.type,
             "title": notif.title,
             "message": notif.message,
+            "reference_type": notif.reference_type,
+            "reference_id": str(notif.reference_id) if notif.reference_id else None,
             "data": notif.data,
             "is_read": notif.is_read,
             "created_at": notif.created_at.isoformat(),
