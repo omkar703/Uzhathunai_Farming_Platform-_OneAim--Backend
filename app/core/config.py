@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     AWS_REGION_NAME: str = "ap-south-1"
-    AWS_S3_BUCKET: str = "uzhathunai-uploads"
+    AWS_S3_BUCKET: str = "uzhathunai-platform-uploads-2026"
     
     # Logging
     LOG_LEVEL: str = "INFO"
