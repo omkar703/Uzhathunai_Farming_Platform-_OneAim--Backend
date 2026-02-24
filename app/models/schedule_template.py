@@ -29,7 +29,7 @@ class ScheduleTemplate(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     
     # Template identification
-    code = Column(String(50), nullable=False)
+    code = Column(String(100), nullable=False)
     
     # Foreign keys
     crop_type_id = Column(UUID(as_uuid=True), ForeignKey('crop_types.id'), index=True, nullable=True)

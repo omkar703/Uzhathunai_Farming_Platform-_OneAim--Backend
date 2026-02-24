@@ -781,7 +781,7 @@ CREATE INDEX idx_crop_yield_photos_photo ON crop_yield_photos(photo_id);
 -- Schedule Templates
 CREATE TABLE schedule_templates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    code VARCHAR(50) NOT NULL,
+    code VARCHAR(100) NOT NULL,
     crop_type_id UUID REFERENCES crop_types(id),
     crop_variety_id UUID REFERENCES crop_varieties(id),
     is_system_defined BOOLEAN DEFAULT true,

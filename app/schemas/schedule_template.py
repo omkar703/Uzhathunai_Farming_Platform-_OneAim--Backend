@@ -128,7 +128,7 @@ class ScheduleTemplateBase(BaseModel):
     """Base schema for schedule template."""
     name: Optional[str] = Field(None, description="Name (maps to default translation)")
     description: Optional[str] = Field(None, description="Description (maps to default translation)")
-    code: str = Field(..., min_length=1, max_length=50)
+    code: str = Field(..., min_length=1, max_length=100)
     crop_type_id: Optional[UUID] = None
     crop_variety_id: Optional[UUID] = None
     is_system_defined: bool = False
@@ -153,7 +153,7 @@ class ScheduleTemplateUpdate(BaseModel):
     """Schema for updating schedule template."""
     name: Optional[str] = Field(None, description="Name (maps to default translation)")
     description: Optional[str] = Field(None, description="Description (maps to default translation)")
-    code: Optional[str] = Field(None, min_length=1, max_length=50)
+    code: Optional[str] = Field(None, min_length=1, max_length=100)
     crop_type_id: Optional[UUID] = None
     crop_variety_id: Optional[UUID] = None
     is_active: Optional[bool] = None
@@ -171,7 +171,7 @@ class ScheduleTemplateUpdate(BaseModel):
 
 class ScheduleTemplateCopy(BaseModel):
     """Schema for copying schedule template."""
-    new_code: str = Field(..., min_length=1, max_length=50)
+    new_code: str = Field(..., min_length=1, max_length=100)
     is_system_defined: Optional[bool] = None
     
     @validator('new_code')
