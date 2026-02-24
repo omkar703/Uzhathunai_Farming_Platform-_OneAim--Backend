@@ -1176,6 +1176,7 @@ CREATE TABLE query_responses (
     query_id UUID NOT NULL REFERENCES queries(id) ON DELETE CASCADE,
     response_text TEXT NOT NULL,
     has_recommendation BOOLEAN DEFAULT false,
+    responder_role VARCHAR(20),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_by UUID REFERENCES users(id)
 );
