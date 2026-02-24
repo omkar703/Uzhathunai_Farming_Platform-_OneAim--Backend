@@ -1145,8 +1145,8 @@ COMMENT ON COLUMN work_order_scope.access_permissions IS 'JSONB permissions per 
 CREATE TABLE queries (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     farming_organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    fsp_organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    work_order_id UUID NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+    fsp_organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+    work_order_id UUID REFERENCES work_orders(id) ON DELETE CASCADE,
     query_number VARCHAR(50) UNIQUE,
     title VARCHAR(200) NOT NULL,
     description TEXT NOT NULL,
