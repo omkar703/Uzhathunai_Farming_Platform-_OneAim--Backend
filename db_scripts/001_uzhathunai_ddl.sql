@@ -103,6 +103,7 @@ CREATE TABLE organizations (
     logo_url TEXT,
     organization_type organization_type NOT NULL,
     status organization_status DEFAULT 'NOT_STARTED',
+    specialization VARCHAR(200),
     registration_number VARCHAR(100),
     address TEXT,
     district VARCHAR(100),
